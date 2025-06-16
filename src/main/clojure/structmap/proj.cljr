@@ -1,0 +1,255 @@
+(ns structmap.proj
+    (:require [clojure.clr.io :as io]
+              [clojure.string :as string]
+              [structmap.interop :as interop :refer [linux? windows?]])
+    (:import  [System.Runtime.InteropServices NativeLibrary Marshal]))
+
+(def lib
+ {:instance (cond linux? (NativeLibrary/Load "/usr/lib/x86_64-linux-gnu/libproj.so")
+                  windows? (NativeLibrary/Load "c:\\OSGeo4W\\bin\\proj_8_2.dll"))
+  :success  0
+  :errors
+  {1024 ["PROJ_ERR_INVALID_OP"
+         "other/unspecified error related to coordinate operation initialization"]
+   1025 ["PROJ_ERR_INVALID_OP_WRONG_SYNTAX"
+         "invalid pipeline structure, missing +proj argument, etc"]
+   1026 ["PROJ_ERR_INVALID_OP_MISSING_ARG"
+         "missing required operation parameter"]
+   1027 ["PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE"
+         "one of the operation parameter has an illegal value"]
+   1028 ["PROJ_ERR_INVALID_OP_MUTUALLY_EXCLUSIVE_ARGS" "mutually exclusive arguments"]
+   1029 ["PROJ_ERR_INVALID_OP_FILE_NOT_FOUND_OR_INVALID"
+         "file not found (particular case of PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE)"]
+   4096 ["PROJ_ERR_OTHER" ""]}}
+
+(def proj_context_create
+  (interop/make-fn
+   lib
+   {:function-name "proj_context_create" :arg-types [] :return-type IntPtr}))
+
+(def proj_create
+  (interop/make-fn
+   lib
+   {:function-name "proj_create"
+    :arg-types     [IntPtr String]
+    :return-type   IntPtr}))
+
+(def proj_as_wkt
+  (interop/make-fn
+   lib
+   {:function-name "proj_as_wkt"
+    :arg-types     [IntPtr IntPtr Int32 IntPtr]
+    :return-type   IntPtr}))
+
+(def proj_crs_get_geodetic_crs
+  (interop/make-fn
+   lib
+   {:function-name "proj_crs_get_geodetic_crs"
+    :arg-types     [IntPtr, IntPtr]
+    :return-type   IntPtr}))
+
+(def proj_create_crs_to_crs
+  (interop/make-fn
+   lib
+   {:function-name "proj_create_crs_to_crs"
+    :arg-types     [IntPtr, String, String, IntPtr]
+    :return-type   IntPtr}))
+
+(def proj_create_crs_to_crs_from_pj
+  (interop/make-fn
+   lib
+   {:function-name "proj_create_crs_to_crs_from_pj"
+    :arg-types     [IntPtr, IntPtr, IntPtr, IntPtr, String]
+    :return-type   IntPtr}))
+
+(def Coord (interop/make-struct-type Double 4))
+
+(def proj_coord
+  (interop/make-fn
+   lib
+   {:function-name "proj_coord"
+    :arg-types     [Double, Double, Double, Double]
+    :return-type   Coord}))
+
+(def proj_trans
+  (interop/make-fn
+   lib
+   {:function-name "proj_trans"
+    :arg-types     [IntPtr, Int32, Coord]
+    :return-type   Coord}))
+
+(def proj_destroy
+  (interop/make-fn
+   lib
+   {:function-name       "proj_destroy"
+    :arg-types           [IntPtr]
+    :return-type         IntPtr
+    :zero-means-success? true}))
+
+(def proj_context_destroy
+  (interop/make-fn
+   lib
+   {:function-name       "proj_context_destroy"
+    :arg-types           [IntPtr]
+    :return-type         IntPtr
+    :zero-means-success? true}))
+
+(def PJ_WKT2_2019 (int 2))
+(def PJ_FWD (int 1))
+(def PJ_INV (int -1))
+(def HUGE_VAL Double/PositiveInfinity)
+
+(declare ^:dynamic *ctx*)
+
+;; todo : implement something like (with-open ...) for IntPtr -> proj_destroy
+(defn convert [to params]
+  (let [{:keys [lat lon h x y z srs]} (merge {:srs "EPSG:4326"} params)
+        _                             (case srs
+                                            "EPSG:4326" (assert (and (some? lat) (some? lon)))
+                                            "EPSG:4979" (assert (and (some? lat) (some? lon) (some? h)))
+                                            "EPSG:9518" (assert (and (some? lat) (some? lon) (some? h)))
+                                            "EPSG:3857" (assert (and (some? x) (some? y)))
+                                            "EPSG:4978" (assert (and (some? x) (some? y) (some? z))))
+        P                             (proj_create_crs_to_crs *ctx* srs to IntPtr/Zero)
+        c_in                          (case srs
+                                            "EPSG:4326" (proj_coord lat lon 0.0 HUGE_VAL)
+                                            "EPSG:4979" (proj_coord lat lon h HUGE_VAL)
+                                            "EPSG:9518" (proj_coord lat lon h HUGE_VAL)
+                                            "EPSG:3857" (proj_coord x y 0.0 HUGE_VAL)
+                                            "EPSG:4978" (proj_coord x y z HUGE_VAL))
+        c_out                         (proj_trans P PJ_FWD c_in)]
+    (case to
+          "EPSG:4326" {:lat (nth c_out 0) :lon (nth c_out 1)}
+          "EPSG:4979" {:lat (nth c_out 0) :lon (nth c_out 1) :h (nth c_out 2)}
+          "EPSG:9518" {:lat (nth c_out 0) :lon (nth c_out 1) :h (nth c_out 2)}
+          "EPSG:3857" {:x (nth c_out 0) :y (nth c_out 1)}
+          "EPSG:4978" {:x (nth c_out 0) :y (nth c_out 1) :z (nth c_out 2)})))
+
+(comment
+
+(binding [*ctx* (proj_context_create)]
+  (->> {:lon 12.0 :lat 55.0 :srs "EPSG:4326"}
+       (convert "EPSG:4978")
+       (merge {:srs "EPSG:4978"})
+       (convert "EPSG:4326")
+       pprint))
+
+(binding [*ctx* (proj_context_create)]
+  (->> {:x -20037508.34278925 :y 20037508.34278925 :srs "EPSG:3857"}
+       (convert "EPSG:4326")
+       pprint))
+
+(def asdf "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"geometry\":{\"coordinates\":[[[-86.39910805254728,36.92779265079601],[-86.39904134880973,36.927458495593896],[-86.39844279394062,36.92760282238211],[-86.39852105965926,36.927905694457934],[-86.39910805254728,36.92779265079601]]],\"type\":\"Polygon\"}}]}")
+
+(->> asdf clojure.data.json/read-str clojure.walk/keywordize-keys :features first :geometry :coordinates first
+     (map (partial zipmap [:lon :lat]))
+     (map (partial convert "EPSG:4461"))
+     pprint)
+
+(prefer-method print-method ICollection ValueType)
+
+ ;; port of example from proj quick start guide
+ ;; https://proj.org/en/9.3/development/quickstart.html
+
+ (def C (proj_context_create))
+ (def P (proj_create C "+proj=utm +zone=32 +datum=WGS84 +type=crs"))
+
+ (def G (proj_crs_get_geodetic_crs C P))
+ (def G2P (proj_create_crs_to_crs_from_pj C G P IntPtr/Zero nil))
+
+ (proj_trans G2P PJ_INV (proj_trans G2P PJ_FWD (proj_coord 12.0 55.0 0.0 HUGE_VAL)))
+
+ ;; Copenhagen
+ (def c_in (proj_coord 12.0 55.0 0.0 HUGE_VAL))
+ (def result1 (proj_trans G2P PJ_FWD c_in))
+ (def result2 (proj_trans G2P PJ_INV result1))
+
+ (proj_destroy P)
+ (proj_destroy G)
+ (proj_destroy G2P)
+
+ (proj_context_destroy C)
+
+ (def C (proj_context_create))
+
+ (def P3857
+   (proj_create C "+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs +type=crs"))
+ (def P4326 (proj_create C "+proj=longlat +datum=WGS84 +no_defs +type=crs"))
+ (def P4978 (proj_create C "+proj=geocent +datum=WGS84 +units=m +no_defs +type=crs"))
+ (def P4979 (proj_create C "+proj=longlat +datum=WGS84 +no_defs +type=crs"))
+
+ ;(def G (proj_crs_get_geodetic_crs C P))
+ (def ToECEF (proj_create_crs_to_crs_from_pj C P4979 P4978 IntPtr/Zero nil))
+ (def ToECEF (proj_create_crs_to_crs C "EPSG:4979" "EPSG:4978" IntPtr/Zero))
+
+ ;(def From4326To3857 (proj_create_crs_to_crs C "EPSG:4326" "EPSG:3857" IntPtr/Zero))
+ (def From4326To3857
+   (proj_create_crs_to_crs_from_pj C P4326 P3857 IntPtr/Zero nil))
+
+
+ (-> (proj_as_wkt C P4978 PJ_WKT2_2019 IntPtr/Zero) Marshal/PtrToStringAnsi println)
+
+
+ ;PJ_AREA PROJ_DLL *proj_area_create(void);
+ ;void PROJ_DLL proj_area_set_bbox(PJ_AREA *area,
+ ;                                 double west_lon_degree,
+ ;                                 double south_lat_degree,
+ ;                                 double east_lon_degree,
+ ;                                 double north_lat_degree);
+ ;void PROJ_DLL proj_area_destroy(PJ_AREA* area);
+
+ (def proj_area_create
+   (interop/make-fn
+   lib
+    {:function-name "proj_area_create"
+     :arg-types     []
+     :return-type   IntPtr}))
+
+ (def proj_area_set_bbox
+   (interop/make-fn
+   lib
+    {:function-name "proj_area_set_bbox"
+     :arg-types     [IntPtr, Double, Double, Double, Double]
+     :return-type   nil}))
+
+ (def proj_area_destroy
+   (interop/make-fn
+   lib
+    {:function-name       "proj_area_destroy"
+     :arg-types           [IntPtr]
+     :return-type         nil
+     :zero-means-success? true}))
+
+ (def A (proj_area_create))
+
+ (proj_area_set_bbox A 1.0 2.0 3.0 4.0)
+
+ (proj_area_destroy A)
+
+ (type A)
+
+
+ ;; alternatively: PJ PROJ_DLL *proj_create_crs_to_crs(PJ_CONTEXT *ctx, const char *source_crs, const char *target_crs, PJ_AREA *area);
+
+ ;; Copenhagen
+ (def c_in (proj_coord 12.0 55.0 0.0 HUGE_VAL))
+
+ ;; Kokomo IN (coffee and donuts) tile 20/273406/395091
+ (def c_in (proj_coord -86.13334604281705 40.49210021094248 0.0 HUGE_VAL))
+
+ (def result
+   (proj_trans From4326To3857 #_ToECEF PJ_FWD c_in))
+
+ (defn from-4326-to-3857 [{:keys [lat lon]}]
+   (let [c_in   (proj_coord lon lat 0.0 HUGE_VAL)
+         c_out  (proj_trans From4326To3857 PJ_FWD c_in)]
+     {:x (nth c_out 0) :y (nth c_out 1)}))
+
+ (from-4326-to-3857 {:lat 55.0 :lon 12.0})
+
+ (proj_destroy P)
+ (proj_destroy G)
+ (proj_destroy G2P)
+
+ (proj_context_destroy C))
+
