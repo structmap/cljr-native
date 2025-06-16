@@ -168,7 +168,6 @@
         ;  (CopyTo [this arr offset]
         ;     (dotimes [i cnt]
         ;       (aset arr (+ i offset) (.nth this i))))
-        ;          
         ;  (get_Count [_] cnt)
         ;  (get_IsSynchronized [_] true)
         ;  (get_SyncRoot [this] this)
@@ -383,13 +382,13 @@
 ;   {:instance (cond linux? (NativeLibrary/Load "/usr/local/cuda-12.4/targets/x86_64-linux/lib/libnppig.so")
 ;                    windows? (NativeLibrary/Load "c:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6\\bin\\nppig64_12.dll"))
 ;    :success  0
-;    :errors   {-8 ["NPP_NULL_POINTER_ERROR"] 
-;               -7 ["NPP_RANGE_ERROR"] 
-;               -6 ["NPP_SIZE_ERROR"] 
-;               -5 ["NPP_BAD_ARGUMENT_ERROR"] 
-;               -4 ["NPP_NO_MEMORY_ERROR"] 
-;               -3 ["NPP_NOT_IMPLEMENTED_ERROR"] 
-;               -2 ["NPP_ERROR"] 
+;    :errors   {-8 ["NPP_NULL_POINTER_ERROR"]
+;               -7 ["NPP_RANGE_ERROR"]
+;               -6 ["NPP_SIZE_ERROR"]
+;               -5 ["NPP_BAD_ARGUMENT_ERROR"]
+;               -4 ["NPP_NO_MEMORY_ERROR"]
+;               -3 ["NPP_NOT_IMPLEMENTED_ERROR"]
+;               -2 ["NPP_ERROR"]
 ;               -1 ["NPP_ERROR_RESERVED"]}}
 ;   "cuda"
 ;   {:instance (cond linux? (NativeLibrary/Load "/usr/local/cuda-12.4/targets/x86_64-linux/lib/libcudart.so")
