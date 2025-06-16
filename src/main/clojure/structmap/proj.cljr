@@ -20,7 +20,7 @@
    1028 ["PROJ_ERR_INVALID_OP_MUTUALLY_EXCLUSIVE_ARGS" "mutually exclusive arguments"]
    1029 ["PROJ_ERR_INVALID_OP_FILE_NOT_FOUND_OR_INVALID"
          "file not found (particular case of PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE)"]
-   4096 ["PROJ_ERR_OTHER" ""]}}
+   4096 ["PROJ_ERR_OTHER" ""]}})
 
 (def proj_context_create
   (interop/make-fn

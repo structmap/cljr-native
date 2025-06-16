@@ -277,9 +277,9 @@
         (instance? IConvertible z) (zero? z)
         :default                   false))
 
-(defn make-fn [library {:keys [function-name arg-types return-type failure zero-means-success?]}]
+(defn make-fn [{:keys [instance errors] :as library} {:keys [function-name arg-types return-type failure zero-means-success?]}]
   {:pre [(vector? arg-types)]}
-  (let [export  (NativeLibrary/GetExport library function-name)
+  (let [export  (NativeLibrary/GetExport instance function-name)
         types   (conj arg-types (or return-type IntPtr))]
     (fn [& args]
       (let [t1 (.ToUnixTimeMilliseconds DateTimeOffset/Now)]
@@ -306,7 +306,7 @@
                   ;; TODO: use proj_context_errno(ctx)
                   (and (not (zero?' ret)) zero-means-success?) (throw
                                                                  (new Exception
-                                                                   (apply format "%s %d %s %s" function-name ret (get-in library [:errors ret] [nil nil]))))
+                                                                   (apply format "%s %d %s %s" function-name ret (get errors ret [nil nil]))))
                   (nil? return-type)                           nil
                   :else                                        ret))
           (finally
