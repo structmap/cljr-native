@@ -11,6 +11,10 @@
              [System.Runtime.InteropServices NativeLibrary Marshal]
              [System.Runtime.InteropServices MarshalAsAttribute UnmanagedType]))
 
+(def macos? (OperatingSystem/IsMacOS))
+(def windows? (OperatingSystem/IsWindows))
+(def linux? (OperatingSystem/IsLinux))
+
 ;(def logger
 ;  (let [factory (LoggerFactory/Create (sys-action [ILoggingBuilder] [b] (ConsoleLoggerExtensions/AddSimpleConsole b)))]
 ;    (.CreateLogger factory (str *ns*))))
@@ -312,10 +316,6 @@
               )))))))
 
 (comment
-
-(def macos? (OperatingSystem/IsMacOS))
-(def windows? (OperatingSystem/IsWindows))
-(def linux? (OperatingSystem/IsLinux))
 
 (def example-libs
   {"proj"
