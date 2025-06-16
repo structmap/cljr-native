@@ -1,0 +1,423 @@
+(ns structmap.interop
+    (:use clojure.repl clojure.pprint)
+    (:require [clojure.clr.io :as io]
+              [clojure.string :as string])
+    (:import [System.Collections IList ICollection IEnumerable IEnumerator]
+             ;[Microsoft.Extensions.Logging LoggerFactory ILoggingBuilder LoggerExtensions ConsoleLoggerExtensions]
+             [System.Reflection BindingFlags FieldInfo AssemblyName TypeAttributes]
+             [System.Reflection FieldAttributes MethodAttributes MethodImplAttributes]
+             [System.Reflection.Emit OpCodes AssemblyBuilder AssemblyBuilderAccess]
+             [System.Reflection CallingConventions Emit.CustomAttributeBuilder]
+             [System.Runtime.InteropServices NativeLibrary Marshal]
+             [System.Runtime.InteropServices MarshalAsAttribute UnmanagedType]))
+
+;(def logger
+;  (let [factory (LoggerFactory/Create (sys-action [ILoggingBuilder] [b] (ConsoleLoggerExtensions/AddSimpleConsole b)))]
+;    (.CreateLogger factory (str *ns*))))
+
+(defn invalid-op [tb interface method return-type parameter-types]
+  (let [exCtorInfo (.GetConstructor InvalidOperationException Type/EmptyTypes)
+        mb         (.DefineMethod tb (name method)
+                                  (enum-or MethodAttributes/Virtual MethodAttributes/HideBySig MethodAttributes/Public)
+                                  return-type
+                                  (into-array Type parameter-types))
+        il         (.GetILGenerator mb)]
+    (.Emit il OpCodes/Newobj exCtorInfo)
+    (.Emit il OpCodes/Throw)
+    (.DefineMethodOverride tb mb (.GetMethod interface (name method) (into-array Type parameter-types)))
+    nil))
+
+(def counter (atom 0))
+
+(defn make-struct-type2
+  "Generate a subclass of ValueType with fields and attributes to facilitate interop."
+  [fields]
+  (let [assemblyName                (new AssemblyName (format "Dynamic%d" (swap! counter inc)))
+        assemblyBuilder             (AssemblyBuilder/DefineDynamicAssembly assemblyName AssemblyBuilderAccess/Run)
+        module                      (.DefineDynamicModule assemblyBuilder "DynamicTypeModule")
+        tb                          (.DefineType module
+                                                 (format "Struct-%s" (Guid/NewGuid))
+                                                 (enum-or TypeAttributes/Public TypeAttributes/ExplicitLayout)
+                                                 ValueType)
+        ;; constructor (testing only!)
+        objCtor                     (.GetConstructor Object Type/EmptyTypes)
+        mb                          (.DefineConstructor tb
+                                                        (enum-or MethodAttributes/RTSpecialName MethodAttributes/HideBySig MethodAttributes/Public)
+                                                        CallingConventions/Standard
+                                                        Type/EmptyTypes)
+        il                          (.GetILGenerator mb)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Call objCtor)
+        _                           (.Emit il OpCodes/Ret)
+        ]
+    (dorun
+      (for [{:keys [o k t ut n]} fields]
+        (let [field-name                  k
+              field-type                  t
+              fb                          (.DefineField tb field-name field-type FieldAttributes/Public)
+              _                           (.SetOffset fb o)
+              cinfo                       (.GetConstructor MarshalAsAttribute (into-array Type [UnmanagedType]))
+              cab                         (if (not= ut UnmanagedType/ByValArray)
+                                            (new CustomAttributeBuilder cinfo (object-array [ut]))
+                                            (new CustomAttributeBuilder cinfo (object-array [ut])
+                                                (into-array FieldInfo [(.GetField MarshalAsAttribute "SizeConst")])
+                                                (object-array [(int n)])))
+              ]
+        (.SetCustomAttribute fb cab))))
+    (.CreateType tb)))
+
+(defn make-struct-type
+  "Generate a subclass of ValueType with attributes to facilitate interop as well as methods to implement
+   IList for convenient use from Clojure. Basically a fixed size array wrapped in a struct e.g. PJ_COORD."
+  [element-type n]
+  (let [assemblyName                (new AssemblyName (format "Dynamic%d" (swap! counter inc)))
+        assemblyBuilder             (AssemblyBuilder/DefineDynamicAssembly assemblyName AssemblyBuilderAccess/Run)
+        module                      (.DefineDynamicModule assemblyBuilder "DynamicTypeModule")
+        tb                          (.DefineType module
+                                                 (format "%s%d-%s" (.Name element-type) n (Guid/NewGuid))
+                                                 (enum-or TypeAttributes/Public TypeAttributes/SequentialLayout)
+                                                 ValueType)
+
+        ;; create field which is to hold array value
+        field-name                  "Value"
+        field-type                  (Type/GetType (String/Concat (.FullName element-type) "[]") true false)
+        fb                          (.DefineField tb field-name field-type FieldAttributes/Public)
+        cinfo                       (.GetConstructor MarshalAsAttribute (into-array Type [UnmanagedType]))
+        cab                         (new CustomAttributeBuilder cinfo (object-array [UnmanagedType/ByValArray])
+                                      (into-array FieldInfo [(.GetField MarshalAsAttribute "SizeConst")])
+                                      (object-array [(int n)]))
+        _                           (.SetCustomAttribute fb cab)
+
+        ;; constructor (testing only!)
+        objCtor                     (.GetConstructor Object Type/EmptyTypes)
+        mb                          (.DefineConstructor tb
+                                                        (enum-or MethodAttributes/RTSpecialName MethodAttributes/HideBySig MethodAttributes/Public)
+                                                        CallingConventions/Standard
+                                                        (into-array Type [field-type]))
+        il                          (.GetILGenerator mb)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Call objCtor)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Ldarg_1)
+        _                           (.Emit il OpCodes/Stfld fb)
+        _                           (.Emit il OpCodes/Ret)
+
+        ;; proxy calls to GetEnumerator onto field's GetEnumerator method
+        _                           (.AddInterfaceImplementation tb IEnumerable)
+
+        mb                          (.DefineMethod tb "GetEnumerator"
+                                                   (enum-or MethodAttributes/Virtual MethodAttributes/HideBySig MethodAttributes/Public)
+                                                   IEnumerator
+                                                   Type/EmptyTypes)
+        il                          (.GetILGenerator mb)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Ldfld fb)
+        _                           (.Emit il OpCodes/Call (.GetMethod field-type "GetEnumerator"))
+        _                           (.Emit il OpCodes/Ret)
+        _                           (.DefineMethodOverride tb mb (.GetMethod IEnumerable "GetEnumerator"))
+
+        ;; proxy ICollection onto field
+        _                           (.AddInterfaceImplementation tb ICollection)
+        mb                          (.DefineMethod tb "CopyTo"
+                                                   (enum-or MethodAttributes/Virtual MethodAttributes/HideBySig MethodAttributes/Public)
+                                                   Void
+                                                   (into-array Type [Array Int32]))
+        il                          (.GetILGenerator mb)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Ldfld fb)
+        _                           (.Emit il OpCodes/Ldarg_1)
+        _                           (.Emit il OpCodes/Ldarg_2)
+        _                           (.Emit il OpCodes/Call (.GetMethod field-type "CopyTo" (into-array Type [Array Int32])))
+        ;_                           (.Emit il OpCodes/Ret)
+        _                           (.DefineMethodOverride tb mb (.GetMethod ICollection "CopyTo"))
+
+        mb                          (.DefineMethod tb "get_Count"
+                                                   (enum-or MethodAttributes/Virtual MethodAttributes/HideBySig MethodAttributes/Public)
+                                                   Int32
+                                                   Type/EmptyTypes)
+        il                          (.GetILGenerator mb)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Ldfld fb)
+        _                           (.Emit il OpCodes/Call (.GetMethod field-type "get_Length")) ;; hmm, why not get_Count here?
+        _                           (.Emit il OpCodes/Ret)
+        _                           (.DefineMethodOverride tb mb (.GetMethod ICollection "get_Count"))
+
+        mb                          (.DefineMethod tb "get_IsSynchronized"
+                                                   (enum-or MethodAttributes/Virtual MethodAttributes/HideBySig MethodAttributes/Public)
+                                                   Boolean
+                                                   Type/EmptyTypes)
+        il                          (.GetILGenerator mb)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Ldfld fb)
+        _                           (.Emit il OpCodes/Call (.GetMethod field-type "get_IsSynchronized"))
+        _                           (.Emit il OpCodes/Ret)
+        _                           (.DefineMethodOverride tb mb (.GetMethod ICollection "get_IsSynchronized"))
+
+        mb                          (.DefineMethod tb "get_SyncRoot"
+                                                   (enum-or MethodAttributes/Virtual MethodAttributes/HideBySig MethodAttributes/Public)
+                                                   Object
+                                                   Type/EmptyTypes)
+        il                          (.GetILGenerator mb)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Ldfld fb)
+        _                           (.Emit il OpCodes/Call (.GetMethod field-type "get_SyncRoot"))
+        _                           (.Emit il OpCodes/Ret)
+        _                           (.DefineMethodOverride tb mb (.GetMethod ICollection "get_SyncRoot"))
+
+        ;  ICollection
+        ;  (CopyTo [this arr offset]
+        ;     (dotimes [i cnt]
+        ;       (aset arr (+ i offset) (.nth this i))))
+        ;          
+        ;  (get_Count [_] cnt)
+        ;  (get_IsSynchronized [_] true)
+        ;  (get_SyncRoot [this] this)
+
+        ;; proxy IList onto field
+        _                           (.AddInterfaceImplementation tb IList)
+        mb                          (.DefineMethod tb "get_Item"
+                                                   (enum-or MethodAttributes/Virtual MethodAttributes/HideBySig MethodAttributes/Public)
+                                                   Object
+                                                   (into-array Type [Int32]))
+        il                          (.GetILGenerator mb)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Ldfld fb)
+        _                           (.Emit il OpCodes/Ldarg_1)
+        _                           (.Emit il OpCodes/Call (.GetMethod field-type "GetValue" (into-array Type [Int32])))
+        _                           (.Emit il OpCodes/Ret)
+        _                           (.DefineMethodOverride tb mb (.GetMethod IList "get_Item" (into-array Type [Int32])))
+
+        mb                          (.DefineMethod tb "get_IsReadOnly"
+                                                   (enum-or MethodAttributes/Virtual MethodAttributes/HideBySig MethodAttributes/Public)
+                                                   Boolean
+                                                   Type/EmptyTypes)
+        il                          (.GetILGenerator mb)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Ldfld fb)
+        _                           (.Emit il OpCodes/Call (.GetMethod field-type "get_IsReadOnly"))
+        _                           (.Emit il OpCodes/Ret)
+        _                           (.DefineMethodOverride tb mb (.GetMethod IList "get_IsReadOnly"))
+
+        mb                          (.DefineMethod tb "get_IsFixedSize"
+                                                   (enum-or MethodAttributes/Virtual MethodAttributes/HideBySig MethodAttributes/Public)
+                                                   Boolean
+                                                   Type/EmptyTypes)
+        il                          (.GetILGenerator mb)
+        _                           (.Emit il OpCodes/Ldarg_0)
+        _                           (.Emit il OpCodes/Ldfld fb)
+        _                           (.Emit il OpCodes/Call (.GetMethod field-type "get_IsFixedSize"))
+        _                           (.Emit il OpCodes/Ret)
+        _                           (.DefineMethodOverride tb mb (.GetMethod IList "get_IsFixedSize"))
+
+        _                           (invalid-op tb IList 'Add Int32 [Object])
+        _                           (invalid-op tb IList 'Clear Void [])
+        _                           (invalid-op tb IList 'Remove Void [Object])
+        ;_                           (invalid-op tb IList 'get_Item Object [Int32])
+        _                           (invalid-op tb IList 'set_Item Void [Int32 Object])
+        _                           (invalid-op tb IList 'Insert Void [Int32 Object])
+        ;_                           (invalid-op tb IList 'IndexOf Int32 [Object Int32 Int32])
+        ;_                           (invalid-op tb IList 'IndexOf Int32 [Object Int32])
+        _                           (invalid-op tb IList 'IndexOf Int32 [Object])
+        _                           (invalid-op tb IList 'Contains Boolean [Object])
+        _                           (invalid-op tb IList 'RemoveAt Void [Int32])
+
+        ;  IList
+        ;  (Add [_ v] (throw (InvalidOperationException.)))
+        ;  (Clear [_] (throw (InvalidOperationException.)))
+        ;  (Insert [_ i v] (throw (InvalidOperationException.)))
+        ;  (Remove [_ v] (throw (InvalidOperationException.)))
+        ;  (RemoveAt [_ i] (throw (InvalidOperationException.)))
+        ;  (Contains [this o] (boolean (some #(= % o) this)))
+        ;  (IndexOf [this o]
+        ;    (loop [i (int 0)]
+        ;      (cond
+        ;        (== i (.-Length (.-Item s))) -1
+        ;        (= o (aget (.-Item s) i)) i
+        ;        :else (recur (inc i)))))
+        ;  (get_IsFixedSize [_] true)
+        ;  (get_Item [this i] (aget (.-Item s) i))
+        ;  (set_Item [_ i v] (throw (InvalidOperationException.)))
+        ]
+    (.CreateType tb)))
+
+(def delegate-type-factory
+  (let [assemblyName    (new AssemblyName (format "%s-Delegates" (str *ns*)))
+        assemblyBuilder (AssemblyBuilder/DefineDynamicAssembly assemblyName AssemblyBuilderAccess/RunAndCollect)
+        module          (.DefineDynamicModule assemblyBuilder "DynamicTypeModule")]
+    (fn [returnType parameterTypes]
+      (let [tb           (.DefineType module
+                                      (format "DynamicDelegate-%s" (Guid/NewGuid))
+                                      (enum-or TypeAttributes/Public TypeAttributes/Sealed)
+                                      MulticastDelegate)
+            ctr          (.DefineConstructor tb
+                                             (enum-or MethodAttributes/RTSpecialName MethodAttributes/HideBySig MethodAttributes/Public)
+                                             CallingConventions/Standard
+                                             (into-array Type [Object IntPtr]))
+            _            (.SetImplementationFlags ctr
+                                                  (enum-or MethodImplAttributes/Runtime MethodImplAttributes/Managed))
+            invokeMethod (.DefineMethod tb "Invoke"
+                                        (enum-or MethodAttributes/Virtual MethodAttributes/HideBySig MethodAttributes/Public)
+                                        returnType
+                                        parameterTypes)
+            _            (.SetImplementationFlags invokeMethod
+                                                  (enum-or MethodImplAttributes/Runtime MethodImplAttributes/Managed))]
+        (.CreateType tb)))))
+
+(defn delegate-for-function-pointer
+  [export types]
+  (Marshal/GetDelegateForFunctionPointer
+   export
+   (delegate-type-factory (last types) (into-array Type (butlast types)))))
+
+(defn zero?' [z]
+  (cond (instance? IntPtr z)       (= IntPtr/Zero z)
+        (instance? IConvertible z) (zero? z)
+        :default                   false))
+
+(defn make-fn [library {:keys [function-name arg-types return-type failure zero-means-success?]}]
+  {:pre [(vector? arg-types)]}
+  (let [export  (NativeLibrary/GetExport library function-name)
+        types   (conj arg-types (or return-type IntPtr))]
+    (fn [& args]
+      (let [t1 (.ToUnixTimeMilliseconds DateTimeOffset/Now)]
+        (try
+          (let [delegate (delegate-for-function-pointer export types) ;; TODO: cache this? something weird happening with GC
+                _        (assert (not (nil? delegate)))
+                ret      (case (count args)
+                               0 (.Invoke delegate)
+                               1 (.Invoke delegate (nth args 0))
+                               2 (.Invoke delegate (nth args 0) (nth args 1))
+                               3 (.Invoke delegate (nth args 0) (nth args 1) (nth args 2))
+                               4 (.Invoke delegate (nth args 0) (nth args 1) (nth args 2) (nth args 3))
+                               5 (.Invoke delegate (nth args 0) (nth args 1) (nth args 2) (nth args 3) (nth args 4))
+                               6 (.Invoke delegate (nth args 0) (nth args 1) (nth args 2) (nth args 3) (nth args 4) (nth args 5))
+                               7 (.Invoke delegate (nth args 0) (nth args 1) (nth args 2) (nth args 3) (nth args 4) (nth args 5) (nth args 6))
+                               8 (.Invoke delegate (nth args 0) (nth args 1) (nth args 2) (nth args 3) (nth args 4) (nth args 5) (nth args 6) (nth args 7))
+                               9 (.Invoke delegate (nth args 0) (nth args 1) (nth args 2) (nth args 3) (nth args 4) (nth args 5) (nth args 6) (nth args 7) (nth args 8))
+                               ; ...
+                               12 (.Invoke delegate (nth args 0) (nth args 1) (nth args 2) (nth args 3) (nth args 4) (nth args 5)
+                                                    (nth args 6) (nth args 7) (nth args 8) (nth args 9) (nth args 10) (nth args 11)))
+                               ]
+            (cond (and (zero?' ret) zero-means-success?)       true
+                  (and (zero?' ret) (not zero-means-success?)) (throw (new Exception (format "%s returned zero" function-name)))
+                  ;; TODO: use proj_context_errno(ctx)
+                  (and (not (zero?' ret)) zero-means-success?) (throw
+                                                                 (new Exception
+                                                                   (apply format "%s %d %s %s" function-name ret (get-in library [:errors ret] [nil nil]))))
+                  (nil? return-type)                           nil
+                  :else                                        ret))
+          (finally
+            (let [t2 (.ToUnixTimeMilliseconds DateTimeOffset/Now)
+                  millis (- t2 t1)]
+              nil ; (LoggerExtensions/LogInformation logger "{s}:\t{d}ms" (object-array [(.PadRight function-name 32) millis]))
+              )))))))
+
+(comment
+
+(def macos? (OperatingSystem/IsMacOS))
+(def windows? (OperatingSystem/IsWindows))
+(def linux? (OperatingSystem/IsLinux))
+
+(def example-libs
+  {"proj"
+   {:instance (cond linux? (NativeLibrary/Load "/usr/lib/x86_64-linux-gnu/libproj.so")
+                    windows? (NativeLibrary/Load "c:\\OSGeo4W\\bin\\proj_8_2.dll"))
+    :success  0
+    :errors
+    {1024 ["PROJ_ERR_INVALID_OP"
+           "other/unspecified error related to coordinate operation initialization"]
+     1025 ["PROJ_ERR_INVALID_OP_WRONG_SYNTAX"
+           "invalid pipeline structure, missing +proj argument, etc"]
+     1026 ["PROJ_ERR_INVALID_OP_MISSING_ARG"
+           "missing required operation parameter"]
+     1027 ["PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE"
+           "one of the operation parameter has an illegal value"]
+     1028 ["PROJ_ERR_INVALID_OP_MUTUALLY_EXCLUSIVE_ARGS" "mutually exclusive arguments"]
+     1029 ["PROJ_ERR_INVALID_OP_FILE_NOT_FOUND_OR_INVALID"
+           "file not found (particular case of PROJ_ERR_INVALID_OP_ILLEGAL_ARG_VALUE)"]
+     4096 ["PROJ_ERR_OTHER" ""]}}
+;   "tiff"
+;   {:instance (cond linux? (NativeLibrary/Load "/usr/lib/x86_64-linux-gnu/libtiff.so"))
+;    :success  0
+;    :errors   {}}
+;   "openjpeg"
+;   {:instance (cond linux? (NativeLibrary/Load "/usr/local/lib/libopenjp2.so") ;; alt /usr/local/lib/libgrokj2kcodec.so ?
+;                    windows? (throw (new NotImplementedException)))
+;    :success  1 ;; OPJ_TRUE
+;    :errors
+;    {0 ["OPJ_FALSE" ""]}}
+;   "openjph"
+;   {:instance (cond linux? (NativeLibrary/Load "/usr/local/lib/libopenjph.so")
+;                    windows? (throw (new NotImplementedException)))
+;    :success  1 ;; OPJ_TRUE
+;    :errors
+;    {0 ["OPJ_FALSE" ""]}}
+;   "nvjpeg"
+;   {:instance (cond linux? (NativeLibrary/Load "/usr/local/cuda-12.4/targets/x86_64-linux/lib/libnvjpeg.so")
+;                    windows? (throw (new NotImplementedException)))
+;    :success  0  ; NVJPEG_STATUS_SUCCESS
+;    :errors   {1 ["NVJPEG_STATUS_NOT_INITIALIZED" ""]
+;               2 ["NVJPEG_STATUS_INVALID_PARAMETER" ""]
+;               3 ["NVJPEG_STATUS_BAD_JPEG" ""]
+;               4 ["NVJPEG_STATUS_JPEG_NOT_SUPPORTED" ""]
+;               5 ["NVJPEG_STATUS_ALLOCATOR_FAILURE" ""]
+;               6 ["NVJPEG_STATUS_EXECUTION_FAILED" ""]
+;               7 ["NVJPEG_STATUS_ARCH_MISMATCH" ""]
+;               8 ["NVJPEG_STATUS_INTERNAL_ERROR" ""]
+;               9 ["NVJPEG_STATUS_IMPLEMENTATION_NOT_SUPPORTED" ""]
+;               10 ["NVJPEG_STATUS_INCOMPLETE_BITSTREAM" ""]}}
+;   "nvjpeg2k"
+;   {:instance (cond linux? (NativeLibrary/Load "/usr/lib/x86_64-linux-gnu/libnvjpeg2k.so")
+;                    windows? (throw (new NotImplementedException)))
+;    :success  0  ; NVJPEG2K_STATUS_SUCCESS
+;    :errors   {1 ["NVJPEG2K_STATUS_NOT_INITIALIZED" ""]
+;               2 ["NVJPEG2K_STATUS_INVALID_PARAMETER" ""]
+;               3 ["NVJPEG2K_STATUS_BAD_JPEG" ""]
+;               4 ["NVJPEG2K_STATUS_JPEG_NOT_SUPPORTED" ""]
+;               5 ["NVJPEG2K_STATUS_ALLOCATOR_FAILURE" ""]
+;               6 ["NVJPEG2K_STATUS_EXECUTION_FAILED" ""]
+;               7 ["NVJPEG2K_STATUS_ARCH_MISMATCH" ""]
+;               8 ["NVJPEG2K_STATUS_INTERNAL_ERROR" ""]
+;               9 ["NVJPEG2K_STATUS_IMPLEMENTATION_NOT_SUPPORTED" ""]}}
+;   "nppi"
+;   {:instance (cond linux? (NativeLibrary/Load "/usr/local/cuda-12.4/targets/x86_64-linux/lib/libnppig.so")
+;                    windows? (NativeLibrary/Load "c:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6\\bin\\nppig64_12.dll"))
+;    :success  0
+;    :errors   {-8 ["NPP_NULL_POINTER_ERROR"] 
+;               -7 ["NPP_RANGE_ERROR"] 
+;               -6 ["NPP_SIZE_ERROR"] 
+;               -5 ["NPP_BAD_ARGUMENT_ERROR"] 
+;               -4 ["NPP_NO_MEMORY_ERROR"] 
+;               -3 ["NPP_NOT_IMPLEMENTED_ERROR"] 
+;               -2 ["NPP_ERROR"] 
+;               -1 ["NPP_ERROR_RESERVED"]}}
+;   "cuda"
+;   {:instance (cond linux? (NativeLibrary/Load "/usr/local/cuda-12.4/targets/x86_64-linux/lib/libcudart.so")
+;                    windows? (NativeLibrary/Load "c:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6\\bin\\cudart64_12.dll"))
+;    :success  0
+;    :errors   {}}
+;;   "vips_"
+;;   {:instance (NativeLibrary/Load "/usr/lib/x86_64-linux-gnu/libvips.so")
+;;    :success  0
+;;    :errors   {}}
+    })
+
+(def proj_context_create
+  (interop/make-fn
+   (get example-libs "proj")
+   {:function-name "proj_context_create" :arg-types [] :return-type IntPtr}))
+
+(def proj_context_destroy
+  (interop/make-fn
+   (get example-libs "proj")
+   {:function-name       "proj_context_destroy"
+    :arg-types           [IntPtr]
+    :return-type         IntPtr
+    :zero-means-success? true}))
+
+(def ctx (proj_context_create))
+(do (proj_context_destroy ctx))
+
+)
+
+nil
