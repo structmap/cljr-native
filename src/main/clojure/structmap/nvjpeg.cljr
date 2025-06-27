@@ -1,0 +1,446 @@
+(ns structmap.nvjpeg
+    ;(:use clojure.repl clojure.pprint)
+    (:require [clojure.clr.io :as io]
+              [clojure.string :as string]
+              [clojure.walk :as walk]
+              [structmap.interop :as interop])
+    (:import [System.Runtime.InteropServices
+              Marshal
+              NativeLibrary
+              NativeMemory
+              UnmanagedType
+              GCHandle
+              GCHandleType]
+             [System.IO MemoryStream]
+             [System.Reflection BindingFlags]
+             #_[Hjg.Pngcs PngReader ImageLineHelper]))
+
+; apt install cuda-cudart-dev-12-9 libnpp-dev-12-9 libnvjpeg-dev-12-9
+
+(defmacro pinning
+  [ptr & body]
+  {:pre [(symbol? ptr)]}
+  (let [gch (gensym)]
+    `(let [~gch (GCHandle/Alloc ~ptr GCHandleType/Pinned)]
+      (try ~@(walk/prewalk-replace {ptr `(.AddrOfPinnedObject ~gch)} body)
+        (finally (.Free ~gch))))))
+
+(def libcudart
+  {:headers  ["/usr/local/cuda-12.9/include/cuda.h"
+              "/usr/local/cuda-12.9/include/cuda_runtime.h"
+              "/usr/local/cuda-12.9/include/cuda_runtime_api.h"
+              "/usr/local/cuda-12.9/include/cudart_platform.h"]
+   :instance (cond interop/linux?   (NativeLibrary/Load "/usr/local/cuda-12.9/targets/x86_64-linux/lib/libcudart.so")
+                   interop/windows? (NativeLibrary/Load "c:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.6\\bin\\cudart64_12.dll"))
+   :success  0
+   :errors   {}})
+
+(def libnvjpeg
+  {:headers  ["/usr/local/cuda-12.9/include/nvjpeg.h"]
+   :instance (cond interop/linux?   (NativeLibrary/Load "/usr/local/cuda-12.9/targets/x86_64-linux/lib/libnvjpeg.so")
+                   interop/windows? (throw (new NotImplementedException)))
+   :success  0
+   ; NVJPEG_STATUS_SUCCESS
+   :errors   {1  ["NVJPEG_STATUS_NOT_INITIALIZED" ""]
+              2  ["NVJPEG_STATUS_INVALID_PARAMETER" ""]
+              3  ["NVJPEG_STATUS_BAD_JPEG" ""]
+              4  ["NVJPEG_STATUS_JPEG_NOT_SUPPORTED" ""]
+              5  ["NVJPEG_STATUS_ALLOCATOR_FAILURE" ""]
+              6  ["NVJPEG_STATUS_EXECUTION_FAILED" ""]
+              7  ["NVJPEG_STATUS_ARCH_MISMATCH" ""]
+              8  ["NVJPEG_STATUS_INTERNAL_ERROR" ""]
+              9  ["NVJPEG_STATUS_IMPLEMENTATION_NOT_SUPPORTED" ""]
+              10 ["NVJPEG_STATUS_INCOMPLETE_BITSTREAM" ""]}})
+
+;; nvjpegStatus_t NVJPEGAPI nvjpegCreateSimple(nvjpegHandle_t *handle);
+(def nvjpegCreateSimple
+  (interop/make-fn
+   libnvjpeg
+   {:function-name       "nvjpegCreateSimple"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; nvjpegStatus_t NVJPEGAPI nvjpegEncoderStateCreate(
+;;         nvjpegHandle_t handle,
+;;         nvjpegEncoderState_t *encoder_state,
+;;         cudaStream_t stream);
+(def nvjpegEncoderStateCreate
+  (interop/make-fn
+   libnvjpeg
+   {:function-name       "nvjpegEncoderStateCreate"
+    :arg-types           [IntPtr
+                          IntPtr
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; nvjpegStatus_t NVJPEGAPI nvjpegEncoderParamsCreate(
+;;         nvjpegHandle_t handle,
+;;         nvjpegEncoderParams_t *encoder_params,
+;;         cudaStream_t stream);
+(def nvjpegEncoderParamsCreate
+  (interop/make-fn
+   libnvjpeg
+   {:function-name       "nvjpegEncoderParamsCreate"
+    :arg-types           [IntPtr
+                          IntPtr
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; typedef enum
+;; {
+;;     NVJPEG_CSS_444 = 0,
+;;     NVJPEG_CSS_422 = 1,
+;;     NVJPEG_CSS_420 = 2,
+;;     NVJPEG_CSS_440 = 3,
+;;     NVJPEG_CSS_411 = 4,
+;;     NVJPEG_CSS_410 = 5,
+;;     NVJPEG_CSS_GRAY = 6,
+;;     NVJPEG_CSS_410V = 7,
+;;     NVJPEG_CSS_UNKNOWN = -1
+;; } nvjpegChromaSubsampling_t;
+(def NVJPEG_CSS_444 (int 0))
+
+;; nvjpegStatus_t NVJPEGAPI nvjpegEncoderParamsSetSamplingFactors(
+;;         nvjpegEncoderParams_t encoder_params,
+;;         const nvjpegChromaSubsampling_t chroma_subsampling,
+;;         cudaStream_t stream);
+(def nvjpegEncoderParamsSetSamplingFactors
+  (interop/make-fn
+   libnvjpeg
+   {:function-name       "nvjpegEncoderParamsSetSamplingFactors"
+    :arg-types           [IntPtr
+                          Int32
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; typedef enum
+;; {
+;;     NVJPEG_INPUT_YUV         = 1, // Input is YUV (or YCbCr)
+;;     NVJPEG_INPUT_RGB         = 3, // Input is RGB - will be converted to YCbCr before encoding
+;;     NVJPEG_INPUT_BGR         = 4, // Input is RGB - will be converted to YCbCr before encoding
+;;     NVJPEG_INPUT_RGBI        = 5, // Input is interleaved RGB - will be converted to YCbCr before encoding
+;;     NVJPEG_INPUT_BGRI        = 6, // Input is interleaved RGB - will be converted to YCbCr before encoding
+;;     NVJPEG_INPUT_NV12        = 8, // Input is 2 channels: Y and UV (at half horizontal + vertical resolution - 420)
+;; } nvjpegInputFormat_t;
+(def NVJPEG_INPUT_RGB (int 3))
+(def NVJPEG_INPUT_RGBI (int 5))
+
+;; nvjpegStatus_t NVJPEGAPI nvjpegEncodeImage(
+;;         nvjpegHandle_t handle,
+;;         nvjpegEncoderState_t encoder_state,
+;;         const nvjpegEncoderParams_t encoder_params,
+;;         const nvjpegImage_t *source,
+;;         nvjpegInputFormat_t input_format,
+;;         int image_width,
+;;         int image_height,
+;;         cudaStream_t stream);
+(def nvjpegEncodeImage
+  (interop/make-fn
+   libnvjpeg
+   {:function-name       "nvjpegEncodeImage"
+    :arg-types           [IntPtr
+                          IntPtr
+                          IntPtr
+                          IntPtr
+                          Int32
+                          Int32
+                          Int32
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; nvjpegStatus_t NVJPEGAPI nvjpegEncodeRetrieveBitstream(
+;;         nvjpegHandle_t handle,
+;;         nvjpegEncoderState_t encoder_state,
+;;         unsigned char *data,
+;;         size_t *length,
+;;         cudaStream_t stream);
+(def nvjpegEncodeRetrieveBitstream1
+  (interop/make-fn
+   libnvjpeg
+   {:function-name       "nvjpegEncodeRetrieveBitstream"
+    :arg-types           [IntPtr
+                          IntPtr
+                          IntPtr
+                          IntPtr
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpegEncodeRetrieveBitstream2
+  (interop/make-fn
+   libnvjpeg
+   {:function-name       "nvjpegEncodeRetrieveBitstream"
+    :arg-types           [IntPtr
+                          IntPtr
+                          (Type/GetType "System.Byte[]" true false)
+                          IntPtr
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; extern __host__ __cudart_builtin__ cudaError_t CUDARTAPI cudaMalloc(void **devPtr, size_t size);
+(def cudaMalloc
+  (interop/make-fn
+   libcudart
+   {:function-name       "cudaMalloc"
+    :arg-types           [IntPtr
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; extern __host__ cudaError_t CUDARTAPI cudaMallocHost(void **ptr, size_t size);
+(def cudaMallocHost
+  (interop/make-fn
+   libcudart
+   {:function-name       "cudaMallocHost"
+    :arg-types           [IntPtr
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; extern __host__ cudaError_t CUDARTAPI cudaMallocPitch(void **devPtr, size_t *pitch, size_t width, size_t height);
+(def cudaMallocPitch
+  (interop/make-fn
+   libcudart
+   {:function-name       "cudaMallocPitch"
+    :arg-types           [IntPtr
+                          IntPtr
+                          Int32
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; extern __host__ cudaError_t CUDARTAPI cudaMemcpy(void *dst, const void *src, size_t count, enum cudaMemcpyKind kind);
+(def cudaMemcpy1
+  (interop/make-fn
+   libcudart
+   {:function-name       "cudaMemcpy"
+    :arg-types           [IntPtr
+                          (Type/GetType "System.Byte[]" true false)
+                          Int32
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; extern __host__ cudaError_t CUDARTAPI cudaMemcpy2D(void *dst, size_t dpitch, const void *src, size_t spitch, size_t width, size_t height, enum cudaMemcpyKind kind);
+(def cudaMemcpy2D
+  (interop/make-fn
+   libcudart
+   {:function-name       "cudaMemcpy2D"
+    :arg-types           [IntPtr
+                          Int32
+                          IntPtr
+                          Int32
+                          Int32
+                          Int32
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; enum __device_builtin__ cudaMemcpyKind
+;; {
+;;     cudaMemcpyHostToHost          =   0,      /**< Host   -> Host */
+;;     cudaMemcpyHostToDevice        =   1,      /**< Host   -> Device */
+;;     cudaMemcpyDeviceToHost        =   2,      /**< Device -> Host */
+;;     cudaMemcpyDeviceToDevice      =   3,      /**< Device -> Device */
+;;     cudaMemcpyDefault             =   4       /**< Direction of the transfer is inferred from the pointer values. Requires unified virtual addressing */
+;; };
+(def cudaMemcpyHostToDevice (int 1))
+(def cudaMemcpyDeviceToHost (int 2))
+
+;; extern __host__ cudaError_t CUDARTAPI cudaStreamSynchronize(cudaStream_t stream);
+(def cudaStreamSynchronize
+  (interop/make-fn
+   libcudart
+   {:function-name       "cudaStreamSynchronize"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; extern __host__ __cudart_builtin__ cudaError_t CUDARTAPI cudaFree(void *devPtr);
+(def cudaFree
+  (interop/make-fn
+   libcudart
+   {:function-name       "cudaFree"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; nvjpegStatus_t NVJPEGAPI nvjpegEncoderStateDestroy(nvjpegEncoderState_t encoder_state);
+(def nvjpegEncoderStateDestroy
+  (interop/make-fn
+   libnvjpeg
+   {:function-name       "nvjpegEncoderStateDestroy"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; nvjpegStatus_t NVJPEGAPI nvjpegEncoderParamsDestroy(nvjpegEncoderParams_t encoder_params);
+(def nvjpegEncoderParamsDestroy
+  (interop/make-fn
+   libnvjpeg
+   {:function-name       "nvjpegEncoderParamsDestroy"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; nvjpegStatus_t NVJPEGAPI nvjpegDestroy(nvjpegHandle_t handle);
+(def nvjpegDestroy
+  (interop/make-fn
+   libnvjpeg
+   {:function-name       "nvjpegDestroy"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;; #define NVJPEG_MAX_COMPONENT 4
+(def NVJPEG_MAX_COMPONENT 4)
+
+;; NVJPEG_BACKEND_DEFAULT = 0
+(def NVJPEG_BACKEND_DEFAULT (int 0))
+
+;; NVJPEG_OUTPUT_RGBI = 5
+(def NVJPEG_OUTPUT_RGBI (int 5))
+
+(comment
+
+ ;; nvjpegHandle_t nv_handle;
+ (def nv_handle (Marshal/AllocHGlobal (Marshal/SizeOf IntPtr)))
+ ;; nvjpegEncoderState_t nv_enc_state;
+ (def nv_enc_state (Marshal/AllocHGlobal (Marshal/SizeOf IntPtr)))
+ ;; nvjpegEncoderParams_t nv_enc_params;
+ (def nv_enc_params (Marshal/AllocHGlobal (Marshal/SizeOf IntPtr)))
+ ;; cudaStream_t stream;
+ (def stream IntPtr/Zero)
+
+ ;; // initialize nvjpeg structures
+ ;; nvjpegCreateSimple(&nv_handle);
+ (nvjpegCreateSimple nv_handle)
+
+ ;; nvjpegEncoderStateCreate(nv_handle, &nv_enc_state, stream);
+ (nvjpegEncoderStateCreate
+  (Marshal/ReadIntPtr nv_handle)
+  nv_enc_state
+  stream)
+
+ ;; nvjpegEncoderParamsCreate(nv_handle, &nv_enc_params, stream);
+ (nvjpegEncoderParamsCreate
+  (Marshal/ReadIntPtr nv_handle)
+  nv_enc_params
+  stream)
+
+ (nvjpegEncoderParamsSetSamplingFactors (Marshal/ReadIntPtr nv_enc_params) NVJPEG_CSS_444, stream)
+
+ ;; typedef struct
+ ;; {
+ ;;     unsigned char * channel[NVJPEG_MAX_COMPONENT];
+ ;;     size_t    pitch[NVJPEG_MAX_COMPONENT];
+ ;; } nvjpegImage_t;
+ ;; nvjpegImage_t nv_image;
+ (def nv_image
+   (Marshal/AllocHGlobal (* 2 NVJPEG_MAX_COMPONENT (Marshal/SizeOf IntPtr))))
+
+ (pinning nv_image
+          (do
+            (dotimes [i 3]
+              (cudaMalloc
+                (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr)))
+                (* 256 256))
+              (Marshal/WriteInt64
+                (IntPtr/Add (Marshal/ReadIntPtr nv_image)
+                            (* (+ i NVJPEG_MAX_COMPONENT) (Marshal/SizeOf IntPtr)))
+                256))
+            (let [i 3]
+              (Marshal/WriteIntPtr
+                (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))) IntPtr/Zero)
+              (Marshal/WriteInt64
+                (IntPtr/Add (Marshal/ReadIntPtr nv_image)
+                            (* (+ i NVJPEG_MAX_COMPONENT) (Marshal/SizeOf IntPtr)))
+                0))))
+
+ (pinning nv_image
+          (do
+            (let [i 0]
+              (let [dst (Marshal/ReadIntPtr
+                          (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))))
+                    n   (* 256 256)
+                    buf (byte-array (repeat n 255))]
+                (cudaMemcpy1 dst buf n cudaMemcpyHostToDevice)))))
+
+ (pinning nv_image
+          (do
+            (let [i 2]
+              (let [dst (Marshal/ReadIntPtr
+                          (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))))
+                    n   (* 256 256)
+                    buf (byte-array (repeat n 255))]
+                (cudaMemcpy1 dst buf n cudaMemcpyHostToDevice)))))
+
+ ;; (pinning nv_image
+ ;;   (dotimes [i (* 2 NVJPEG_MAX_COMPONENT)]
+ ;;     (println (Marshal/ReadInt64 (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr)))))))
+
+ ;; ;; nvjpegEncodeImage(nv_handle, nv_enc_state, nv_enc_params, &nv_image, NVJPEG_INPUT_RGB, 256, 256, stream);
+ (pinning nv_image
+          (nvjpegEncodeImage
+           (Marshal/ReadIntPtr nv_handle)
+           (Marshal/ReadIntPtr nv_enc_state)
+           (Marshal/ReadIntPtr nv_enc_params)
+           (Marshal/ReadIntPtr nv_image)
+           NVJPEG_INPUT_RGB
+           (int 256)
+           (int 256)
+           stream))
+
+ ;; cudaStreamSynchronize(stream);
+ (cudaStreamSynchronize stream)
+
+ ;; size_t length;
+ (def length (new IntPtr))
+ ;; nvjpegEncodeRetrieveBitstream(nv_handle, nv_enc_state, NULL, &length, stream);
+ (pinning length
+          (nvjpegEncodeRetrieveBitstream1
+           (Marshal/ReadIntPtr nv_handle)
+           (Marshal/ReadIntPtr nv_enc_state)
+           IntPtr/Zero
+           length
+           stream))
+
+ ;; char*jpegdata = malloc(length);
+ (def jpegdata (byte-array (.ToInt32 length)))
+ ;; nvjpegEncodeRetrieveBitstream(nv_handle, nv_enc_state, jpegdata, &length, 0);
+ (pinning length
+          (nvjpegEncodeRetrieveBitstream2
+           (Marshal/ReadIntPtr nv_handle)
+           (Marshal/ReadIntPtr nv_enc_state)
+           jpegdata
+           length
+           stream))
+
+ ;; cudaStreamSynchronize(stream);
+ (cudaStreamSynchronize stream)
+
+ ;; //std::ofstream output_file("test.jpg", std::ios::out | std::ios::binary);
+ ;; //output_file.write(jpegdata(), length);
+ ;; //output_file.close();
+ (with-open [out (io/output-stream "test.jpg")]
+   (io/copy jpegdata out))
+
+ (pinning nv_image
+          (dotimes [i 3]
+            (let [chan (Marshal/ReadIntPtr
+                         (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))))]
+              (cudaFree chan))))
+
+ (nvjpegEncoderParamsDestroy (Marshal/ReadIntPtr nv_enc_params))
+
+ (nvjpegEncoderStateDestroy (Marshal/ReadIntPtr nv_enc_state))
+
+ (nvjpegDestroy (Marshal/ReadIntPtr nv_handle)))
+
+nil
