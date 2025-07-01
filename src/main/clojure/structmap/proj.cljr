@@ -136,8 +136,10 @@
                   "EPSG:9518" {:lat (nth c_out 0) :lon (nth c_out 1) :h (nth c_out 2)}
                   "EPSG:3857" {:x (nth c_out 0) :y (nth c_out 1)}
                   "EPSG:4978" {:x (nth c_out 0) :y (nth c_out 1) :z (nth c_out 2)}))
-          (finally (proj_destroy P))))
-      (finally (proj_context_destroy ctx)))))
+          ;(finally (proj_destroy P))
+          ))
+      ;(finally (proj_context_destroy ctx))
+      )))
 
 (comment
 
