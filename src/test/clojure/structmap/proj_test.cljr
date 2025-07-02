@@ -4,7 +4,9 @@
               [structmap.proj :refer :all]))
 
 (defn- approx-equal [a b]
-  (>= 0.001 (math/sqrt (+ (math/pow (- (:lon a) (:lon b)) 2) (math/pow (- (:lat a) (:lat b)) 2)))))
+  (>= 0.001
+      (math/sqrt (+ (math/pow (- (:lon a) (:lon b)) 2)
+                    (math/pow (- (:lat a) (:lat b)) 2)))))
 
 (def copenhagen {:lon 12.0 :lat 55.0})
 
