@@ -1,0 +1,23 @@
+(ns structmap.proj-test
+    (:require [clojure.test :refer :all]
+              [clojure.math :as math]
+              [structmap.proj :refer :all]))
+
+(defn- approx-equal [a b]
+  (>= 0.001 (math/sqrt (+ (math/pow (- (:lon a) (:lon b)) 2) (math/pow (- (:lat a) (:lat b)) 2)))))
+
+(def copenhagen {:lon 12.0 :lat 55.0})
+
+(deftest roundtrip1
+  (->> copenhagen
+       (merge {:srs "EPSG:4326"})
+       (convert "EPSG:4978")
+       (merge {:srs "EPSG:4978"})
+       (convert "EPSG:4326")
+       (approx-equal copenhagen)))
+
+(comment
+  (prefer-method print-method ICollection ValueType)
+)
+
+nil
