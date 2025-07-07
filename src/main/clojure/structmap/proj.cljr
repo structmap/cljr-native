@@ -36,6 +36,31 @@
     :arg-types     [IntPtr String]
     :return-type   IntPtr}))
 
+;/** \brief Object category. */
+;typedef enum
+;{
+;    PJ_CATEGORY_ELLIPSOID,
+;    PJ_CATEGORY_PRIME_MERIDIAN,
+;    PJ_CATEGORY_DATUM,
+;    PJ_CATEGORY_CRS,
+;    PJ_CATEGORY_COORDINATE_OPERATION,
+;    PJ_CATEGORY_DATUM_ENSEMBLE
+;} PJ_CATEGORY;
+(def PJ_CATEGORY_ELLIPSOID (int 0))
+(def PJ_CATEGORY_PRIME_MERIDIAN (int 1))
+(def PJ_CATEGORY_DATUM (int 2))
+(def PJ_CATEGORY_CRS (int 3))
+(def PJ_CATEGORY_COORDINATE_OPERATION (int 4))
+(def PJ_CATEGORY_DATUM_ENSEMBLE (int 5))
+
+;; PJ *proj_create_from_database(PJ_CONTEXT *ctx, const char *auth_name, const char *code, PJ_CATEGORY category, int usePROJAlternativeGridNames, const char *const *options)
+(def proj_create_from_database
+  (interop/make-fn
+   lib
+   {:function-name "proj_create_from_database"
+    :arg-types     [IntPtr, String, String, Int32, Int32, IntPtr]
+    :return-type   IntPtr}))
+
 (def proj_as_wkt
   (interop/make-fn
    lib
