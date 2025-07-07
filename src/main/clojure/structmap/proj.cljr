@@ -7,7 +7,7 @@
     (:import [System.Runtime.InteropServices NativeLibrary Marshal]))
 
 (def lib
-  {:instance (cond linux?   (NativeLibrary/Load "/usr/lib/x86_64-linux-gnu/libproj.so")
+  {:instance (cond linux?   (NativeLibrary/Load "libproj.so")
                    windows? (NativeLibrary/Load "c:\\OSGeo4W\\bin\\proj_8_2.dll"))
    :success  0
    :errors
