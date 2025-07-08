@@ -5,7 +5,7 @@ ClojureCLR utility code for InteropServices including examples for PROJ and CUDA
 ## usage
 
 ```
-cljr -Sdeps '{:deps {io.github.structmap/cljr-native {:git/tag "v0.0.2"  :git/sha "936a080"}}}'
+cljr -Sdeps '{:deps {io.github.structmap/cljr-native {:git/sha "ff7197255a1c7f93df52386a6d79a3132715cc03"}}}'
 (require '[structmap.interop :as interop])
 ```
 

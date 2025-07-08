@@ -307,7 +307,7 @@
 ;; NVJPEG_OUTPUT_RGBI = 5
 (def NVJPEG_OUTPUT_RGBI (int 5))
 
-;(comment
+(comment
 
  ;; nvjpegHandle_t nv_handle;
  (def nv_handle (Marshal/AllocHGlobal (Marshal/SizeOf IntPtr)))
