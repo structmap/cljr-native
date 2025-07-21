@@ -1,0 +1,197 @@
+(ns structmap.openjph
+    ;(:use clojure.repl clojure.pprint)
+    (:require [clojure.clr.io :as io]
+              [structmap.interop :as interop])
+    (:import [System.IO MemoryStream]
+             [System.Runtime.InteropServices NativeLibrary]))
+
+(def libopenjph
+  {:instance (cond interop/linux?
+                   (NativeLibrary/Load #_"libopenjph" "/usr/local/lib/libopenjph.so")
+                   interop/macos?
+                   (NativeLibrary/Load "/Users/jamesdavidson/github/jamesdavidson/openjph/build/src/core/libopenjph.dylib")
+                   :else
+                   (throw (new NotImplementedException)))
+   :success  1 ;; OPJ_TRUE
+   :errors   {0 ["OPJ_FALSE" ""]}})
+
+(def ojph_create_j2c_data
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_create_j2c_data"
+    :arg-types     []
+    :return-type   IntPtr}))
+
+(def ojph_enable_resilience
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_enable_resilience"
+    :arg-types     [IntPtr]
+    :return-type   Void}))
+
+(def ojph_init_j2c_data
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_init_j2c_data"
+    :arg-types     [IntPtr
+                    (Type/GetType "System.Byte[]" true false)
+                    Int32]
+    :return-type   Void}))
+
+(def ojph_restrict_input_resolution
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_restrict_input_resolution"
+    :arg-types     [IntPtr Int32 Int32]
+    :return-type   Void}))
+
+(def ojph_get_j2c_width
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_get_j2c_width"
+    :arg-types     [IntPtr
+                    Int32]
+    :return-type   Int32}))
+
+(def ojph_get_j2c_height
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_get_j2c_height"
+    :arg-types     [IntPtr
+                    Int32]
+    :return-type   Int32}))
+
+(def ojph_get_j2c_bit_depth
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_get_j2c_bit_depth"
+    :arg-types     [IntPtr
+                    Int32]
+    :return-type   Int32}))
+
+(def ojph_parse_j2c_data
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_parse_j2c_data"
+    :arg-types     [IntPtr]
+    :return-type   Void}))
+
+(def ojph_get_j2c_num_components
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_get_j2c_num_components"
+    :arg-types     [IntPtr]
+    :return-type   Int32}))
+
+(def ojph_pull_j2c_line
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_pull_j2c_line"
+    :arg-types     [IntPtr]
+    :return-type   IntPtr
+    #_(Type/GetType "System.Byte[]" true false)}))
+
+;(def ojph_pull_all_lines
+;  (interop/make-fn
+;   {:function-name "ojph_pull_all_lines"
+;    :arg-types     [IntPtr |System.Byte[]| Int32]
+;    :return-type   Void}))
+
+(def ojph_pull_j2c_lines
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_pull_j2c_lines"
+    :arg-types     [IntPtr Int32 IntPtr Int32]
+    :return-type   Void}))
+
+; void ojph_pull_j2c_rgba(j2k_struct* j2c, int n, int32_t* dst, int dst_size)
+(def ojph_pull_j2c_rgba
+  (interop/make-fn
+   libopenjph
+   {:function-name "ojph_pull_j2c_rgba"
+    :arg-types     [IntPtr Int32 (Type/GetType "System.Int32[]" true false) Int32]
+    :return-type   Void}))
+
+;(def ojph_pull_j2c_rgb
+;  (interop/make-fn
+;   {:function-name "ojph_pull_j2c_rgb"
+;    :arg-types     [IntPtr Int32 (Type/GetType "System.Byte[]" true false) Int32]
+;    :return-type   Void}))
+
+; This code akes about 300ms which is way too slow!
+; Would it not be quicker to just invoke ojph_expand to tiff then mmap that file?
+; interestingly the extraction bit only takes 40msecs so that means most of the
+; time is these nested loops doing byte-by-byte manipulation which should really
+; vectorised or JIT'd or something.
+; The benchmark is still ojph_expand which can produce a tiff in ~40msecs.
+; Update: can get down to ~200ms by packing the uint32 values on the native side
+; of the C++ wrapper such that we can BlockCopy direct to the scanline byte array
+; This of course assumes 8 bits per channel per pixel and all that.
+
+; Array/Copy (Array sourceArray, int sourceIndex, Array destinationArray, int destinationIndex, int length);
+; Buffer/BlockCopy (Array src, int srcOffset, Array dst, int dstOffset, int count);
+
+(comment
+  
+  ;  j2k_struct* ojph_create_j2c_data(void)
+  ;  void ojph_init_j2c_data(j2k_struct *j2c, const uint8_t *data, size_t size)
+  ;  int ojph_get_j2c_width(j2k_struct* j2c, int comp_num)
+  ;  int ojph_get_j2c_height(j2k_struct* j2c, int comp_num)
+  ;  int ojph_get_j2c_bit_depth(j2k_struct* j2c, int comp_num)
+  ;  int ojph_get_j2c_is_signed(j2k_struct* j2c, int comp_num)
+  ;  int ojph_get_j2c_num_components(j2k_struct* j2c)
+  ;  int ojph_get_j2c_downsampling_x(j2k_struct* j2c, int comp_num)
+  ;  int ojph_get_j2c_downsampling_y(j2k_struct* j2c, int comp_num)
+  ;  void ojph_parse_j2c_data(j2k_struct *j2c)
+  ;  void ojph_restrict_input_resolution(j2k_struct* j2c, 
+  ;  void ojph_enable_resilience(j2k_struct* j2c)
+  ;  signed int* ojph_pull_j2c_line(j2k_struct* j2c)
+  ;  void ojph_release_j2c_data(j2k_struct* j2c)
+  
+  ;    enable_resilience(j2c);
+  ;    init_j2c_data(j2c, buffer, array.length);
+  ;    restrict_input_resolution(j2c, skip_res_for_data, skip_res_for_recon);
+  ;    var width = get_j2c_width(j2c, 0) | 0;          //component 0
+  ;    var height = get_j2c_height(j2c, 0) | 0;        //component 0
+  ;    var num_comps = get_j2c_num_components(j2c) | 0;
+  ;    var bit_depth = get_j2c_bit_depth(j2c, 0) | 0;  //component 0
+  ;    var is_signed = get_j2c_is_signed(j2c, 0) == 1; //component 0
+  ;    parse_j2c_data(j2c);
+
+  (def chunk22
+   (with-open [is (io/input-stream "chunk-22-89615-209472.jph")
+               os (new MemoryStream)]
+     ; (dotimes [_ 119] (.ReadByte is))
+     (io/copy is os)
+     (.ToArray os)))
+
+ (time
+   (let [j2c      (ojph_create_j2c_data)
+         _        (ojph_init_j2c_data j2c chunk22 (count chunk22))
+         _        (ojph_restrict_input_resolution j2c 0 0) ; reduce resolution by e.g. 1 1
+         w        (ojph_get_j2c_width j2c 0)
+         h        (ojph_get_j2c_height j2c 0) ; need to do batches of 512 for some reason
+         bitdepth (ojph_get_j2c_bit_depth j2c 0)
+         _        (ojph_parse_j2c_data j2c)
+         ncomps   (ojph_get_j2c_num_components j2c)
+         perbatch 512]
+     ;(println [w h bitdepth ncomps])
+     (with-open [os (io/output-stream "test.png")]
+       (let [imi   (new Hjg.Pngcs.ImageInfo w h bitdepth true)
+             png   (new Hjg.Pngcs.PngWriter os imi)]
+         (set! (.-CompLevel png) 0)
+         (dorun
+          (for [starting-row (range 0 h perbatch)]
+            (let [h'     (min (- h starting-row) perbatch)
+                  stride (* w ncomps)
+                  sia    (int-array (* h' stride))]
+              (ojph_pull_j2c_rgba j2c h' sia (count sia))
+              (dotimes [i h']
+                (let [is (int-array stride)]
+                  (Array/Copy sia (* i stride) is 0 stride)
+                  (.WriteRowInt png is (+ starting-row i)))))))
+         (.End png)))))
+
+)
+
+nil
