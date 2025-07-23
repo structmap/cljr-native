@@ -307,6 +307,16 @@
 ;; NVJPEG_OUTPUT_RGBI = 5
 (def NVJPEG_OUTPUT_RGBI (int 5))
 
+;; NVJPEG_INPUT_RGBI        = 5, // Input is interleaved RGB - will be converted to YCbCr before encoding
+(def NVJPEG_INPUT_RGBI (int 5))
+
+;; // convert to planar RGB
+;; NVJPEG_OUTPUT_RGB            = 3,
+(def NVJPEG_OUTPUT_RGB (int 3))
+
+;; NVJPEG_INPUT_RGB         = 3, // Input is RGB - will be converted to YCbCr before encoding
+(def NVJPEG_INPUT_RGB (int 3))
+
 (comment
 
  ;; nvjpegHandle_t nv_handle;
