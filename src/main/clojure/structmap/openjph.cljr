@@ -104,12 +104,12 @@
     :arg-types     [IntPtr Int32 IntPtr Int32]
     :return-type   Void}))
 
-; void ojph_pull_j2c_rgba(j2k_struct* j2c, int n, int32_t* dst, int dst_size)
-(def ojph_pull_j2c_rgba
+; void ojph_pull_j2c_rgbi(j2k_struct* j2c, int n, uint8_t* dst, int dst_size)
+(def ojph_pull_j2c_rgbi
   (interop/make-fn
    libopenjph
-   {:function-name "ojph_pull_j2c_rgba"
-    :arg-types     [IntPtr Int32 (Type/GetType "System.Int32[]" true false) Int32]
+   {:function-name "ojph_pull_j2c_rgbi"
+    :arg-types     [IntPtr Int32 (Type/GetType "System.Byte[]" true false) Int32]
     :return-type   Void}))
 
 ;(def ojph_pull_j2c_rgb
@@ -171,25 +171,25 @@
          _        (ojph_restrict_input_resolution j2c 0 0) ; reduce resolution by e.g. 1 1
          w        (ojph_get_j2c_width j2c 0)
          h        (ojph_get_j2c_height j2c 0) ; need to do batches of 512 for some reason
-         bitdepth (ojph_get_j2c_bit_depth j2c 0)
+         bitdepth 8 ; (ojph_get_j2c_bit_depth j2c 0)
          _        (ojph_parse_j2c_data j2c)
-         ncomps   (ojph_get_j2c_num_components j2c)
+         ncomps   3 ; (ojph_get_j2c_num_components j2c)
          perbatch 512]
      ;(println [w h bitdepth ncomps])
      (with-open [os (io/output-stream "test.png")]
-       (let [imi   (new Hjg.Pngcs.ImageInfo w h bitdepth true)
+       (let [imi   (new Hjg.Pngcs.ImageInfo w h bitdepth false)
              png   (new Hjg.Pngcs.PngWriter os imi)]
          (set! (.-CompLevel png) 0)
          (dorun
           (for [starting-row (range 0 h perbatch)]
             (let [h'     (min (- h starting-row) perbatch)
                   stride (* w ncomps)
-                  sia    (int-array (* h' stride))]
-              (ojph_pull_j2c_rgba j2c h' sia (count sia))
+                  ba     (byte-array (* h' stride))]
+              (ojph_pull_j2c_rgbi j2c h' ba (count ba))
               (dotimes [i h']
-                (let [is (int-array stride)]
-                  (Array/Copy sia (* i stride) is 0 stride)
-                  (.WriteRowInt png is (+ starting-row i)))))))
+                (let [tmp (byte-array stride)]
+                  (Array/Copy ba (* i stride) tmp 0 stride)
+                  (.WriteRowByte png tmp (+ starting-row i)))))))
          (.End png)))))
 
 )
