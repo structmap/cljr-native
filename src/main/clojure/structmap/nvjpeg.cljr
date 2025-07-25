@@ -393,7 +393,7 @@
 
 (use 'structmap.openjph)
 
-(do
+(def pixbuf
  (let [j2c      (ojph_create_j2c_data)
        _        (ojph_init_j2c_data j2c chunk22 (count chunk22))
        _        (ojph_restrict_input_resolution j2c 0 0) ; reduce resolution by e.g. 1 1
@@ -404,7 +404,7 @@
        ncomps   3 ; (ojph_get_j2c_num_components j2c)
        perbatch 512
        stride   (* w ncomps)
-       pixbuf   (byte-array (* h stride))
+       ret      (byte-array (* h stride))
        ]
    (dorun
     (for [starting-row (range 0 h perbatch)]
@@ -413,7 +413,9 @@
             ba     (byte-array (* h' stride))]
         (ojph_pull_j2c_rgbi j2c h' ba (count ba))
         (dotimes [i h']
-          (Array/Copy ba (* i stride) pixbuf (* (+ starting-row i) stride) stride)))))
+          (Array/Copy ba (* i stride) ret (* (+ starting-row i) stride) stride)))))
+   ret))
+
    (pinning nv_image
             (do
               (let [i 0
@@ -424,7 +426,7 @@
                 (let [dst (Marshal/ReadIntPtr
                            (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))))
                       n   (* stride h)]
-                  (cudaMemcpy1 dst pixbuf n cudaMemcpyHostToDevice)))))))
+                  (cudaMemcpy1 dst pixbuf n cudaMemcpyHostToDevice)))))
 
  ;; (pinning nv_image
  ;;   (dotimes [i (* 2 NVJPEG_MAX_COMPONENT)]
@@ -499,6 +501,8 @@
 
  (nvjpegEncoderStateDestroy (Marshal/ReadIntPtr nv_enc_state))
 
- (nvjpegDestroy (Marshal/ReadIntPtr nv_handle)))
+ (nvjpegDestroy (Marshal/ReadIntPtr nv_handle))
+
+)
 
 nil
