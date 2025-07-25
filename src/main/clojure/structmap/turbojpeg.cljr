@@ -19,7 +19,9 @@
         (finally (.Free ~gch))))))
 
 (def libturbojpeg
-  {:instance (cond interop/macos?
+  {:instance (cond interop/linux? ; apt install libjpeg-turbo-official_3.1.1_amd64.deb
+                   (NativeLibrary/Load "/opt/libjpeg-turbo/lib64/libturbojpeg.so")
+                   interop/macos?
                    (NativeLibrary/Load "/Users/jamesdavidson/github/libjpeg-turbo/libjpeg-turbo/build/libturbojpeg.dylib")
                    :else
                    (throw (new NotImplementedException)))
