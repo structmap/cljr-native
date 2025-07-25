@@ -1,0 +1,141 @@
+(ns structmap.turbojpeg
+    ;(:use clojure.repl clojure.pprint)
+    (:require [clojure.clr.io :as io]
+              [clojure.walk :as walk]
+              [structmap.interop :as interop])
+    (:import [System.IO MemoryStream]
+             [System.Runtime.InteropServices
+              NativeLibrary
+              Marshal
+              GCHandle
+              GCHandleType]))
+
+(defmacro pinning
+  [ptr & body]
+  {:pre [(symbol? ptr)]}
+  (let [gch (gensym)]
+    `(let [~gch (GCHandle/Alloc ~ptr GCHandleType/Pinned)]
+      (try ~@(walk/prewalk-replace {ptr `(.AddrOfPinnedObject ~gch)} body)
+        (finally (.Free ~gch))))))
+
+(def libturbojpeg
+  {:instance (cond interop/macos?
+                   (NativeLibrary/Load "/Users/jamesdavidson/github/libjpeg-turbo/libjpeg-turbo/build/libturbojpeg.dylib")
+                   :else
+                   (throw (new NotImplementedException)))
+   :errors   {}})
+
+(def TJINIT_COMPRESS (int 0))
+(def TJPF_RGB (int 0))
+(def TJPARAM_QUALITY (int 3))
+(def TJPARAM_SUBSAMP (int 4))
+(def TJSAMP_444 (int 4))
+
+;DLLEXPORT tjhandle tj3Init(int initType);
+(def tj3Init
+  (interop/make-fn
+   libturbojpeg
+   {:function-name "tj3Init"
+    :arg-types     [Int32]
+    :return-type   IntPtr}))
+
+;DLLEXPORT char *tjGetErrorStr(void);
+(def tjGetErrorStr
+  (interop/make-fn
+   libturbojpeg
+   {:function-name "tjGetErrorStr"
+    :arg-types     []
+    :return-type   String}))
+
+;DLLEXPORT int tj3Set(tjhandle handle, int param, int value);
+(def tj3Set
+  (interop/make-fn
+   libturbojpeg
+   {:function-name "tj3Set"
+    :arg-types     [IntPtr Int32 Int32]
+    :return-type   Int32
+    :zero-means-success? true}))
+
+;DLLEXPORT int tj3Compress8(tjhandle handle, const unsigned char *srcBuf,
+;                                    int width, int pitch, int height, int pixelFormat,
+;                                    unsigned char **jpegBuf, size_t *jpegSize)
+(def tj3Compress8
+  (interop/make-fn
+   libturbojpeg
+   {:function-name "tj3Compress8"
+    :arg-types     [IntPtr
+                    (Type/GetType "System.Byte[]" true false)
+                    Int32
+                    Int32
+                    Int32
+                    Int32
+                    IntPtr
+                    IntPtr]
+    :return-type   Int32
+    :zero-means-success? true}))
+
+;DLLEXPORT void tj3Destroy(tjhandle handle)
+(def tj3Destroy
+  (interop/make-fn
+   libturbojpeg
+   {:function-name "tj3Destroy"
+    :arg-types     [IntPtr]
+    :return-type   Void}))
+
+(comment
+
+  (def chunk22
+   (with-open [is (io/input-stream "chunk-22-89615-209472.jph")
+               os (new MemoryStream)]
+     ; (dotimes [_ 119] (.ReadByte is))
+     (io/copy is os)
+     (.ToArray os)))
+
+  (use 'structmap.openjph)
+
+  (time
+    (let [j2c      (ojph_create_j2c_data)
+          _        (ojph_init_j2c_data j2c chunk22 (count chunk22))
+          _        (ojph_restrict_input_resolution j2c 0 0) ; reduce resolution by e.g. 1 1
+          w        (ojph_get_j2c_width j2c 0)
+          h        (ojph_get_j2c_height j2c 0) ; need to do batches of 512 for some reason
+          bitdepth 8 ; (ojph_get_j2c_bit_depth j2c 0)
+          _        (ojph_parse_j2c_data j2c)
+          ncomps   3 ; (ojph_get_j2c_num_components j2c)
+          perbatch 512
+          stride   (* w ncomps)
+          pixbuf   (byte-array (* h stride))
+          ]
+      (dorun
+       (for [starting-row (range 0 h perbatch)]
+         (let [h'     (min (- h starting-row) perbatch)
+               stride (* w ncomps)
+               ba     (byte-array (* h' stride))]
+           (ojph_pull_j2c_rgbi j2c h' ba (count ba))
+           (dotimes [i h']
+             (Array/Copy ba (* i stride) pixbuf (* (+ starting-row i) stride) stride)))))
+      (let [tjInstance (tj3Init TJINIT_COMPRESS)
+            jpegBuf (Marshal/AllocHGlobal (Marshal/SizeOf IntPtr))
+            jpegSize (Marshal/AllocHGlobal (Marshal/SizeOf IntPtr))]
+        (try
+          (tj3Set tjInstance TJPARAM_QUALITY 90)
+          (tj3Set tjInstance TJPARAM_SUBSAMP TJSAMP_444)
+          (pinning jpegBuf (Marshal/WriteIntPtr jpegBuf IntPtr/Zero))
+          (pinning jpegSize (Marshal/WriteInt64 jpegSize 0))
+          (if
+            (tj3Compress8 tjInstance pixbuf w stride h TJPF_RGB jpegBuf jpegSize)
+            (let [n    (Marshal/ReadInt64 jpegSize)
+                  dest (byte-array n)]
+              ; public static void Copy(IntPtr source, byte[] destination, int startIndex, int length);
+              (Marshal/Copy (Marshal/ReadIntPtr jpegBuf) dest 0 n)
+              (with-open [os (io/output-stream "result.jpg")]
+                (io/copy dest os)))
+            (throw (new Exception "something went wrong")))
+          (finally
+            (when-not (interop/zero?' tjInstance) (tj3Destroy tjInstance)))))))
+
+  ;(tjGetErrorStr)
+
+)
+
+nil
