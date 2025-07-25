@@ -355,57 +355,105 @@
  (def nv_image
    (Marshal/AllocHGlobal (* 2 NVJPEG_MAX_COMPONENT (Marshal/SizeOf IntPtr))))
 
+;(pinning nv_image
+;         (do
+;           ;; print out all fields
+;           (dotimes [i (* 2 NVJPEG_MAX_COMPONENT)]
+;             (println
+;               (Marshal/ReadIntPtr
+;                 (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))))))))
+
  (pinning nv_image
           (do
-            (dotimes [i 3]
+            ;; zero out all fields
+            (dotimes [i (* 2 NVJPEG_MAX_COMPONENT)]
+              (Marshal/WriteIntPtr
+               (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr)))
+               IntPtr/Zero))
+            ;; allocate gpu memory for pixbuf
+            (let [i 0
+                  ncomps 3
+                  w 2048
+                  h 2048
+                  stride (* ncomps w)]
               (cudaMalloc
                 (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr)))
-                (* 256 256))
+                (* h stride))
               (Marshal/WriteInt64
                 (IntPtr/Add (Marshal/ReadIntPtr nv_image)
                             (* (+ i NVJPEG_MAX_COMPONENT) (Marshal/SizeOf IntPtr)))
-                256))
-            (let [i 3]
-              (Marshal/WriteIntPtr
-                (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))) IntPtr/Zero)
-              (Marshal/WriteInt64
-                (IntPtr/Add (Marshal/ReadIntPtr nv_image)
-                            (* (+ i NVJPEG_MAX_COMPONENT) (Marshal/SizeOf IntPtr)))
-                0))))
+                stride))))
 
- (pinning nv_image
-          (do
-            (let [i 0]
-              (let [dst (Marshal/ReadIntPtr
-                          (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))))
-                    n   (* 256 256)
-                    buf (byte-array (repeat n 255))]
-                (cudaMemcpy1 dst buf n cudaMemcpyHostToDevice)))))
+(def chunk22
+  (with-open [is (io/input-stream "chunk-22-89615-209472.jph")
+              os (new MemoryStream)]
+    ; (dotimes [_ 119] (.ReadByte is))
+    (io/copy is os)
+    (.ToArray os)))
 
- (pinning nv_image
-          (do
-            (let [i 2]
-              (let [dst (Marshal/ReadIntPtr
-                          (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))))
-                    n   (* 256 256)
-                    buf (byte-array (repeat n 255))]
-                (cudaMemcpy1 dst buf n cudaMemcpyHostToDevice)))))
+(use 'structmap.openjph)
+
+(do
+ (let [j2c      (ojph_create_j2c_data)
+       _        (ojph_init_j2c_data j2c chunk22 (count chunk22))
+       _        (ojph_restrict_input_resolution j2c 0 0) ; reduce resolution by e.g. 1 1
+       w        (ojph_get_j2c_width j2c 0)
+       h        (ojph_get_j2c_height j2c 0) ; need to do batches of 512 for some reason
+       bitdepth 8 ; (ojph_get_j2c_bit_depth j2c 0)
+       _        (ojph_parse_j2c_data j2c)
+       ncomps   3 ; (ojph_get_j2c_num_components j2c)
+       perbatch 512
+       stride   (* w ncomps)
+       pixbuf   (byte-array (* h stride))
+       ]
+   (dorun
+    (for [starting-row (range 0 h perbatch)]
+      (let [h'     (min (- h starting-row) perbatch)
+            stride (* w ncomps)
+            ba     (byte-array (* h' stride))]
+        (ojph_pull_j2c_rgbi j2c h' ba (count ba))
+        (dotimes [i h']
+          (Array/Copy ba (* i stride) pixbuf (* (+ starting-row i) stride) stride)))))
+   (pinning nv_image
+            (do
+              (let [i 0
+                    ncomps 3
+                    w 2048
+                    h 2048
+                    stride (* ncomps w)]
+                (let [dst (Marshal/ReadIntPtr
+                           (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))))
+                      n   (* stride h)]
+                  (cudaMemcpy1 dst pixbuf n cudaMemcpyHostToDevice)))))))
 
  ;; (pinning nv_image
  ;;   (dotimes [i (* 2 NVJPEG_MAX_COMPONENT)]
  ;;     (println (Marshal/ReadInt64 (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr)))))))
 
  ;; ;; nvjpegEncodeImage(nv_handle, nv_enc_state, nv_enc_params, &nv_image, NVJPEG_INPUT_RGB, 256, 256, stream);
- (pinning nv_image
+
+(let [tile-size 256
+      w 2048
+      h 2048
+      ;; so we have 8x8 tiles in this image
+      row 2
+      col 6
+      cuda-memory-pointer (pinning nv_image (-> nv_image Marshal/ReadIntPtr Marshal/ReadInt64))
+      ncomps 3
+      pitch (* ncomps 2048)
+      hack (doto (long-array 8)
+                 (aset 0 (+ cuda-memory-pointer (* ncomps tile-size col) (* pitch tile-size row)))
+                 (aset 4 pitch))]
+ (pinning hack
           (nvjpegEncodeImage
            (Marshal/ReadIntPtr nv_handle)
            (Marshal/ReadIntPtr nv_enc_state)
            (Marshal/ReadIntPtr nv_enc_params)
-           (Marshal/ReadIntPtr nv_image)
-           NVJPEG_INPUT_RGB
-           (int 256)
-           (int 256)
-           stream))
+           hack
+           NVJPEG_INPUT_RGBI
+           (int tile-size)
+           (int tile-size)
+           stream)))
 
  ;; cudaStreamSynchronize(stream);
  (cudaStreamSynchronize stream)
@@ -442,7 +490,7 @@
    (io/copy jpegdata out))
 
  (pinning nv_image
-          (dotimes [i 3]
+          (let [i 0]
             (let [chan (Marshal/ReadIntPtr
                          (IntPtr/Add (Marshal/ReadIntPtr nv_image) (* i (Marshal/SizeOf IntPtr))))]
               (cudaFree chan))))
