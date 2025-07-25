@@ -4,7 +4,19 @@
               [clojure.walk :as walk]
               [structmap.interop :as interop])
     (:import [System.IO MemoryStream]
-             [System.Runtime.InteropServices NativeLibrary Marshal]))
+             [System.Runtime.InteropServices
+              NativeLibrary
+              Marshal
+              GCHandle
+              GCHandleType]))
+
+(defmacro pinning
+  [ptr & body]
+  {:pre [(symbol? ptr)]}
+  (let [gch (gensym)]
+    `(let [~gch (GCHandle/Alloc ~ptr GCHandleType/Pinned)]
+      (try ~@(walk/prewalk-replace {ptr `(.AddrOfPinnedObject ~gch)} body)
+        (finally (.Free ~gch))))))
 
 (def libturbojpeg
   {:instance (cond interop/linux? ; apt install libjpeg-turbo-official_3.1.1_amd64.deb
@@ -105,19 +117,19 @@
            (dotimes [i h']
              (Array/Copy ba (* i stride) pixbuf (* (+ starting-row i) stride) stride)))))
       (let [tjInstance (tj3Init TJINIT_COMPRESS)
-            jpegBuf (Marshal/AllocHGlobal (Marshal/SizeOf IntPtr))
-            jpegSize (Marshal/AllocHGlobal (Marshal/SizeOf IntPtr))]
+            jpegBuf (new IntPtr 0)
+            jpegSize (new IntPtr 0)]
         (try
           (tj3Set tjInstance TJPARAM_QUALITY 90)
           (tj3Set tjInstance TJPARAM_SUBSAMP TJSAMP_444)
-          (Marshal/WriteIntPtr jpegBuf IntPtr/Zero)
-          (Marshal/WriteInt64 jpegSize 0)
           (if
-            (tj3Compress8 tjInstance pixbuf w stride h TJPF_RGB jpegBuf jpegSize)
-            (let [n    (Marshal/ReadInt64 jpegSize)
+            (->> (tj3Compress8 tjInstance pixbuf w stride h TJPF_RGB jpegBuf jpegSize)
+                 (pinning jpegSize)
+                 (pinning jpegBuf))
+            (let [n    (pinning jpegSize (Marshal/ReadInt64 jpegSize))
                   dest (byte-array n)]
               ; public static void Copy(IntPtr source, byte[] destination, int startIndex, int length);
-              (Marshal/Copy (Marshal/ReadIntPtr jpegBuf) dest 0 n)
+              (pinning jpegBuf (Marshal/Copy (Marshal/ReadIntPtr jpegBuf) dest 0 n))
               (with-open [os (io/output-stream "result.jpg")]
                 (io/copy dest os)))
             (throw (new Exception "something went wrong")))
