@@ -273,9 +273,9 @@
    (delegate-type-factory (last types) (into-array Type (butlast types)))))
 
 (defn zero?' [z]
-  (cond (instance? IntPtr z)       (= IntPtr/Zero z)
-        (instance? IConvertible z) (zero? z)
-        :default                   false))
+  (cond (instance? IntPtr z) (= IntPtr/Zero z)
+        (number? z)          (zero? z)
+        :default             false))
 
 (defn make-fn [{:keys [instance errors] :as library} {:keys [function-name arg-types return-type failure zero-means-success?]}]
   {:pre [(vector? arg-types)]}
