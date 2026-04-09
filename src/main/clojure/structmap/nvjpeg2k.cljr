@@ -1,0 +1,402 @@
+(ns structmap.nvjpeg2k
+    (:use clojure.repl clojure.pprint)
+    (:require [clojure.clr.io :as io]
+              [clojure.string :as string]
+              [structmap.interop :as interop])
+    (:import [System.Runtime.InteropServices
+              Marshal
+              NativeLibrary
+              NativeMemory
+              UnmanagedType
+              GCHandle
+              GCHandleType]
+             [System.Reflection BindingFlags]
+             [Hjg.Pngcs PngReader ImageLineHelper]))
+
+(def NVJPEG2K_BACKEND_DEFAULT (int 0))
+(def NVJPEG2K_UINT8 (int 0))
+
+(def nvjpeg2kCreate
+  (interop/make-fn
+   {:function-name       "nvjpeg2kCreate"
+    :arg-types           [Int32
+                          IntPtr
+                          IntPtr
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kDecodeStateCreate
+  (interop/make-fn
+   {:function-name       "nvjpeg2kDecodeStateCreate"
+    :arg-types           [IntPtr
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kDecodeParamsCreate
+  (interop/make-fn
+   {:function-name       "nvjpeg2kDecodeParamsCreate"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kStreamCreate
+  (interop/make-fn
+   {:function-name       "nvjpeg2kStreamCreate"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+
+(def nvjpeg2kDecodeParamsSetRGBOutput
+  (interop/make-fn
+   {:function-name       "nvjpeg2kDecodeParamsSetRGBOutput"
+    :arg-types           [IntPtr
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kDecodeParamsSetOutputFormat
+  (interop/make-fn
+   {:function-name       "nvjpeg2kDecodeParamsSetOutputFormat"
+    :arg-types           [IntPtr
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kDecodeParamsSetDecodeArea
+  (interop/make-fn
+   {:function-name       "nvjpeg2kDecodeParamsSetDecodeArea"
+    :arg-types           [IntPtr
+                          Int32
+                          Int32
+                          Int32
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kDecodeStateDestroy
+  (interop/make-fn
+   {:function-name       "nvjpeg2kDecodeStateDestroy"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kDecodeParamsDestroy
+  (interop/make-fn
+   {:function-name       "nvjpeg2kDecodeParamsDestroy"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kStreamDestroy
+  (interop/make-fn
+   {:function-name       "nvjpeg2kStreamDestroy"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kDestroy
+  (interop/make-fn
+   {:function-name       "nvjpeg2kDestroy"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kStreamParse
+  (interop/make-fn
+   {:function-name       "nvjpeg2kStreamParse"
+    :arg-types           [IntPtr
+                          |System.Byte[]|
+                          Int32
+                          Int32
+                          Int32
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kStreamParseFile
+  (interop/make-fn
+   {:function-name       "nvjpeg2kStreamParseFile"
+    :arg-types           [IntPtr
+                          String
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kStreamGetImageInfo
+  (interop/make-fn
+   {:function-name       "nvjpeg2kStreamGetImageInfo"
+    :arg-types           [IntPtr
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kStreamGetImageComponentInfo
+  (interop/make-fn
+   {:function-name       "nvjpeg2kStreamGetImageComponentInfo"
+    :arg-types           [IntPtr
+                          IntPtr
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kDecodeImage
+  (interop/make-fn
+   {:function-name       "nvjpeg2kDecodeImage"
+    :arg-types           [IntPtr
+                          IntPtr
+                          IntPtr
+                          IntPtr
+                          IntPtr
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kDecodeTile
+  (interop/make-fn
+   {:function-name       "nvjpeg2kDecodeTile"
+    :arg-types           [IntPtr
+                          IntPtr
+                          IntPtr
+                          Int32
+                          Int32
+                          IntPtr
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def nvjpeg2kStreamGetResolutionsInTile
+  (interop/make-fn
+   {:function-name       "nvjpeg2kStreamGetResolutionsInTile"
+    :arg-types           [IntPtr
+                          Int32
+                          IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def cudaMallocPitch
+  (interop/make-fn
+   {:function-name       "cudaMallocPitch"
+    :arg-types           [IntPtr
+                          IntPtr
+                          Int32
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def cudaDeviceSynchronize
+  (interop/make-fn
+   {:function-name       "cudaDeviceSynchronize"
+    :arg-types           []
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def cudaFree
+  (interop/make-fn
+   {:function-name       "cudaFree"
+    :arg-types           [IntPtr]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+;(comment
+
+(def h
+  (let [m   (new IntPtr)
+        gch (GCHandle/Alloc m GCHandleType/Pinned)]
+    (nvjpeg2kCreate NVJPEG2K_BACKEND_DEFAULT IntPtr/Zero IntPtr/Zero (.AddrOfPinnedObject gch))
+    (.Free gch)
+    m))
+
+(def params
+  (let [m   (new IntPtr)
+        gch (GCHandle/Alloc m GCHandleType/Pinned)]
+    (nvjpeg2kDecodeParamsCreate (.AddrOfPinnedObject gch))
+    (.Free gch)
+    m))
+
+(def decode_state
+  (let [m   (new IntPtr)
+        gch (GCHandle/Alloc m GCHandleType/Pinned)]
+    (nvjpeg2kDecodeStateCreate h (.AddrOfPinnedObject gch))
+    (.Free gch)
+    m))
+
+(def decode_params
+  (let [m   (new IntPtr)
+        gch (GCHandle/Alloc m GCHandleType/Pinned)]
+    (nvjpeg2kDecodeParamsCreate (.AddrOfPinnedObject gch))
+    (.Free gch)
+    m))
+
+(def s
+  (let [m   (new IntPtr)
+        gch (GCHandle/Alloc m GCHandleType/Pinned)]
+    (nvjpeg2kStreamCreate (.AddrOfPinnedObject gch))
+    (.Free gch)
+    m))
+
+
+; from src/lib/openjp2/j2k.h
+; #define J2K_CCP_CBLKSTY_HT 0x40       /**< (high throughput) HT codeblocks */
+
+;(nvjpeg2kStreamParseFile h "chunk-22-89615-209472.jph" s) ; NVJPEG2K_STATUS_JPEG_NOT_SUPPORTED
+
+;(with-open [is (io/input-stream "chunk-22-89615-209472.jph")
+;            os (io/output-stream "chunk-22-89615-209472.j2k")]
+;  (dotimes [_ 119] (.ReadByte is))
+;  (io/copy is os))
+
+(def chunk22
+  (with-open [is (io/input-stream "chunk-22-89615-209472.jph")
+              os (new System.IO.MemoryStream)]
+    (dotimes [_ 119] (.ReadByte is))
+    (io/copy is os)
+    (.ToArray os)))
+
+(def ds0_ht_07_b11
+  (with-open [is (io/input-stream "/home/james.davidson/OpenHTJ2K/conformance_data/ds0_ht_07_b11.j2k")
+              os (new System.IO.MemoryStream)]
+    (io/copy is os)
+    (.ToArray os)))
+
+(def ds0_ht_01_b11
+  (with-open [is (io/input-stream "/home/james.davidson/OpenHTJ2K/conformance_data/ds0_ht_01_b11.j2k")
+              os (new System.IO.MemoryStream)]
+    (io/copy is os)
+    (.ToArray os)))
+
+(def p0_01
+  (with-open [is (io/input-stream "/home/james.davidson/OpenHTJ2K/conformance_data/p0_01.j2k")
+              os (new System.IO.MemoryStream)]
+    (io/copy is os)
+    (.ToArray os)))
+
+(nvjpeg2kStreamParse h p0_01 (count p0_01) 0 0 s)
+
+(def image_info
+  (let [m   (int-array 7)
+        gch (GCHandle/Alloc m GCHandleType/Pinned)]
+    (nvjpeg2kStreamGetImageInfo s (.AddrOfPinnedObject gch))
+    (.Free gch)
+    (zipmap
+      [:image_width
+        :image_height
+        :tile_width
+        :tile_height
+        :num_tiles_x
+        :num_tiles_y
+        :num_components]
+      m)))
+
+(def image_comp_info
+  (into []
+        (for [c (range (:num_components image_info))]
+          (let [m   (int-array 4)
+                gch (GCHandle/Alloc m GCHandleType/Pinned)]
+            (nvjpeg2kStreamGetImageComponentInfo s (.AddrOfPinnedObject gch) c)
+            (.Free gch)
+            (zipmap
+              [:component_width
+               :component_height
+               :precision
+               :sgn]
+              m)))))
+
+(def bytes_per_sample 1) ; implied by NVJPEG2K_UINT8
+
+;(nvjpeg2kDecodeParamsSetRGBOutput decode_params (int 1))
+;(nvjpeg2kDecodeParamsSetOutputFormat decode_params NVJPEG2K_FORMAT_INTERLEAVED)
+
+; default to full image presumably?
+;nvjpeg2kStatus_t nvjpeg2kDecodeParamsSetDecodeArea(nvjpeg2kDecodeParams_t decode_params,
+;        uint32_t start_x,
+;        uint32_t end_x,
+;        uint32_t start_y,
+;        uint32_t end_y);
+
+(def decode_output (make-array IntPtr (:num_components image_info)))
+(def pitch_in_bytes (make-array Int32 (:num_components image_info)))
+
+(dorun
+ (for [c (range (:num_components image_info))]
+   (let [m1 (new IntPtr)
+         gch1 (GCHandle/Alloc m1 GCHandleType/Pinned)
+         m2 (new IntPtr)
+         gch2 (GCHandle/Alloc m2 GCHandleType/Pinned)
+        w (-> image_comp_info (nth c) :component_width)
+        h (-> image_comp_info (nth c) :component_height)]
+     (cudaMallocPitch (.AddrOfPinnedObject gch1) (.AddrOfPinnedObject gch2) w h)
+     (aset decode_output c m1)
+     (aset pitch_in_bytes c (.ToInt32 m2))
+     (.Free gch1)
+     (.Free gch2))))
+
+(def nvjpeg2kImage_t
+  (interop/make-struct-type2
+    [{:o 0  :k "pixel_data" :t IntPtr :ut UnmanagedType/U8}
+     {:o 8  :k "pitch_in_bytes" :t IntPtr :ut UnmanagedType/U8}
+     {:o 16 :k "pixel_type" :t Int32 :ut UnmanagedType/U4}
+     {:o 20 :k "num_components" :t Int32 :ut UnmanagedType/U4}]))
+
+(let [i (.InvokeMember nvjpeg2kImage_t
+                       ".ctor"
+                       (enum-or BindingFlags/DeclaredOnly BindingFlags/Public BindingFlags/NonPublic BindingFlags/Instance BindingFlags/CreateInstance)
+                       nil nil (object-array nil))
+      fields (->> (.GetMembers nvjpeg2kImage_t)
+                  (filter #(= (.MemberType %) System.Reflection.MemberTypes/Field))
+                  (reduce #(assoc %1 (.Name %2) %2) {}))
+      gch1 (GCHandle/Alloc decode_output GCHandleType/Pinned)
+      gch2 (GCHandle/Alloc pitch_in_bytes GCHandleType/Pinned)]
+  (-> fields (get "pixel_data") (.SetValue i (.AddrOfPinnedObject gch1)))
+  (-> fields (get "pitch_in_bytes") (.SetValue i (.AddrOfPinnedObject gch2)))
+  (-> fields (get "pixel_type") (.SetValue i NVJPEG2K_UINT8))
+  (-> fields (get "num_components") (.SetValue i (:num_components image_info)))
+  (let [gch (GCHandle/Alloc i GCHandleType/Pinned)]
+    (nvjpeg2kDecodeImage h decode_state s decode_params (.AddrOfPinnedObject gch) 0)
+    ;(nvjpeg2kDecodeTile h decode_state s 0 0 (.AddrOfPinnedObject gch) 0)
+    (.Free gch))
+  (.Free gch1)
+  (.Free gch2))
+
+(cudaDeviceSynchronize)
+
+(def cudaMemcpy2
+  (interop/make-fn
+   {:function-name       "cudaMemcpy"
+    :arg-types           [|System.Byte[]|
+                          IntPtr
+                          Int32
+                          Int32]
+    :return-type         Int32
+    :zero-means-success? true}))
+
+(def cudaMemcpyDeviceToHost (int 2))
+
+(with-open [os (io/output-stream "test.png")]
+  (let [i 0
+        w (:image_width image_info)
+        h (:image_height image_info)
+        pitch (nth pitch_in_bytes i)
+        hostmem (byte-array (* pitch h))
+        _ (cudaMemcpy2 hostmem (nth decode_output i) (* h pitch) cudaMemcpyDeviceToHost)
+;        ] :ok))
+        imi   (new Hjg.Pngcs.ImageInfo w h (:precision (first image_comp_info)) false true false)
+        png   (new Hjg.Pngcs.PngWriter os imi)]
+      (set! (.-CompLevel png) 0)
+      (dotimes [i (:image_height image_info)]
+        (let [iline (new Hjg.Pngcs.ImageLine imi Hjg.Pngcs.ImageLine+ESampleType/BYTE)]
+          (Array/Copy hostmem (* i pitch) (.-ScanlineB iline) 0 w)
+          (.WriteRow png iline i)))
+      (.End png)))
+
+;(let [m (new Int32)
+;      gch (GCHandle/Alloc m GCHandleType/Pinned)]
+;  (nvjpeg2kStreamGetResolutionsInTile s 0 (.AddrOfPinnedObject gch))
+;  (.Free gch)
+;  (type m))
+
+(cudaDeviceSynchronize)
+
+nil
