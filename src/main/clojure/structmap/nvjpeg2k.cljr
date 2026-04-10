@@ -13,11 +13,43 @@
              [System.Reflection BindingFlags]
              [Hjg.Pngcs PngReader ImageLineHelper]))
 
+(def nvjpeg2k
+  {:instance (NativeLibrary/Load "C:\\Program Files\\NVIDIA nvJPEG2K\\v0.10\\bin\\13\\nvjpeg2k_0.dll")
+   :success  0  ; NVJPEG2K_STATUS_SUCCESS
+   :errors   {1 ["NVJPEG2K_STATUS_NOT_INITIALIZED" ""]
+              2 ["NVJPEG2K_STATUS_INVALID_PARAMETER" ""]
+              3 ["NVJPEG2K_STATUS_BAD_JPEG" ""]
+              4 ["NVJPEG2K_STATUS_JPEG_NOT_SUPPORTED" ""]
+              5 ["NVJPEG2K_STATUS_ALLOCATOR_FAILURE" ""]
+              6 ["NVJPEG2K_STATUS_EXECUTION_FAILED" ""]
+              7 ["NVJPEG2K_STATUS_ARCH_MISMATCH" ""]
+              8 ["NVJPEG2K_STATUS_INTERNAL_ERROR" ""]
+              9 ["NVJPEG2K_STATUS_IMPLEMENTATION_NOT_SUPPORTED" ""]}})
+
+(def cudart
+  {:instance (NativeLibrary/Load "c:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64\\cudart64_13.dll")
+   :success  0
+   :errors   {}})
+
+(def nvjpeg
+  {:instance (NativeLibrary/Load "c:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v13.2\\bin\\x64\\nvjpeg64_13.dll")
+   :success  0  ; NVJPEG_STATUS_SUCCESS
+   :errors   {1 ["NVJPEG_STATUS_NOT_INITIALIZED" ""]
+              2 ["NVJPEG_STATUS_INVALID_PARAMETER" ""]
+              3 ["NVJPEG_STATUS_BAD_JPEG" ""]
+              4 ["NVJPEG_STATUS_JPEG_NOT_SUPPORTED" ""]
+              5 ["NVJPEG_STATUS_ALLOCATOR_FAILURE" ""]
+              6 ["NVJPEG_STATUS_EXECUTION_FAILED" ""]
+              7 ["NVJPEG_STATUS_ARCH_MISMATCH" ""]
+              8 ["NVJPEG_STATUS_INTERNAL_ERROR" ""]
+              9 ["NVJPEG_STATUS_IMPLEMENTATION_NOT_SUPPORTED" ""]
+              10 ["NVJPEG_STATUS_INCOMPLETE_BITSTREAM" ""]}})
+
 (def NVJPEG2K_BACKEND_DEFAULT (int 0))
 (def NVJPEG2K_UINT8 (int 0))
 
 (def nvjpeg2kCreate
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kCreate"
     :arg-types           [Int32
                           IntPtr
@@ -27,7 +59,7 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kDecodeStateCreate
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kDecodeStateCreate"
     :arg-types           [IntPtr
                           IntPtr]
@@ -35,14 +67,14 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kDecodeParamsCreate
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kDecodeParamsCreate"
     :arg-types           [IntPtr]
     :return-type         Int32
     :zero-means-success? true}))
 
 (def nvjpeg2kStreamCreate
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kStreamCreate"
     :arg-types           [IntPtr]
     :return-type         Int32
@@ -50,7 +82,7 @@
 
 
 (def nvjpeg2kDecodeParamsSetRGBOutput
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kDecodeParamsSetRGBOutput"
     :arg-types           [IntPtr
                           Int32]
@@ -58,7 +90,7 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kDecodeParamsSetOutputFormat
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kDecodeParamsSetOutputFormat"
     :arg-types           [IntPtr
                           Int32]
@@ -66,7 +98,7 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kDecodeParamsSetDecodeArea
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kDecodeParamsSetDecodeArea"
     :arg-types           [IntPtr
                           Int32
@@ -77,35 +109,35 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kDecodeStateDestroy
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kDecodeStateDestroy"
     :arg-types           [IntPtr]
     :return-type         Int32
     :zero-means-success? true}))
 
 (def nvjpeg2kDecodeParamsDestroy
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kDecodeParamsDestroy"
     :arg-types           [IntPtr]
     :return-type         Int32
     :zero-means-success? true}))
 
 (def nvjpeg2kStreamDestroy
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kStreamDestroy"
     :arg-types           [IntPtr]
     :return-type         Int32
     :zero-means-success? true}))
 
 (def nvjpeg2kDestroy
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kDestroy"
     :arg-types           [IntPtr]
     :return-type         Int32
     :zero-means-success? true}))
 
 (def nvjpeg2kStreamParse
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kStreamParse"
     :arg-types           [IntPtr
                           |System.Byte[]|
@@ -117,7 +149,7 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kStreamParseFile
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kStreamParseFile"
     :arg-types           [IntPtr
                           String
@@ -126,7 +158,7 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kStreamGetImageInfo
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kStreamGetImageInfo"
     :arg-types           [IntPtr
                           IntPtr]
@@ -134,7 +166,7 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kStreamGetImageComponentInfo
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kStreamGetImageComponentInfo"
     :arg-types           [IntPtr
                           IntPtr
@@ -143,7 +175,7 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kDecodeImage
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kDecodeImage"
     :arg-types           [IntPtr
                           IntPtr
@@ -155,7 +187,7 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kDecodeTile
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kDecodeTile"
     :arg-types           [IntPtr
                           IntPtr
@@ -168,7 +200,7 @@
     :zero-means-success? true}))
 
 (def nvjpeg2kStreamGetResolutionsInTile
-  (interop/make-fn
+  (interop/make-fn nvjpeg2k
    {:function-name       "nvjpeg2kStreamGetResolutionsInTile"
     :arg-types           [IntPtr
                           Int32
@@ -177,7 +209,7 @@
     :zero-means-success? true}))
 
 (def cudaMallocPitch
-  (interop/make-fn
+  (interop/make-fn cudart
    {:function-name       "cudaMallocPitch"
     :arg-types           [IntPtr
                           IntPtr
@@ -187,20 +219,25 @@
     :zero-means-success? true}))
 
 (def cudaDeviceSynchronize
-  (interop/make-fn
+  (interop/make-fn cudart
    {:function-name       "cudaDeviceSynchronize"
     :arg-types           []
     :return-type         Int32
     :zero-means-success? true}))
 
 (def cudaFree
-  (interop/make-fn
+  (interop/make-fn cudart
    {:function-name       "cudaFree"
     :arg-types           [IntPtr]
     :return-type         Int32
     :zero-means-success? true}))
 
-;(comment
+(comment
+
+(load-file "C:\\Code\\cljr-native\\src\\main\\clojure\\structmap\\interop.cljr")
+(load-file "C:\\Code\\cljr-native\\src\\main\\clojure\\structmap\\nvjpeg2k.cljr")
+
+(ns structmap.nvjpeg2k)
 
 (def h
   (let [m   (new IntPtr)
@@ -237,43 +274,51 @@
     (.Free gch)
     m))
 
-
 ; from src/lib/openjp2/j2k.h
 ; #define J2K_CCP_CBLKSTY_HT 0x40       /**< (high throughput) HT codeblocks */
 
 ;(nvjpeg2kStreamParseFile h "chunk-22-89615-209472.jph" s) ; NVJPEG2K_STATUS_JPEG_NOT_SUPPORTED
+
+;(nvjpeg2kStreamParseFile h "c:\\code\\cljr\\chunk-22-89615-209472.jph" s) ; true with v0.10.0 !
+;(nvjpeg2kStreamParseFile h "c:\\code\\cljr\\file1_b11.jph" s) ; true with v0.10.0 !
 
 ;(with-open [is (io/input-stream "chunk-22-89615-209472.jph")
 ;            os (io/output-stream "chunk-22-89615-209472.j2k")]
 ;  (dotimes [_ 119] (.ReadByte is))
 ;  (io/copy is os))
 
-(def chunk22
-  (with-open [is (io/input-stream "chunk-22-89615-209472.jph")
+;(def chunk22
+;  (with-open [is (io/input-stream "c:\\code\\cljr\\chunk-22-89615-209472.jph")
+;              os (new System.IO.MemoryStream)]
+;    (dotimes [_ 119] (.ReadByte is))
+;    (io/copy is os)
+;    (.ToArray os)))
+;
+;(def ds0_ht_07_b11
+;  (with-open [is (io/input-stream "/home/james.davidson/OpenHTJ2K/conformance_data/ds0_ht_07_b11.j2k")
+;              os (new System.IO.MemoryStream)]
+;    (io/copy is os)
+;    (.ToArray os)))
+;
+;(def ds0_ht_01_b11
+;  (with-open [is (io/input-stream "/home/james.davidson/OpenHTJ2K/conformance_data/ds0_ht_01_b11.j2k")
+;              os (new System.IO.MemoryStream)]
+;    (io/copy is os)
+;    (.ToArray os)))
+;
+;(def p0_01
+;  (with-open [is (io/input-stream "/home/james.davidson/OpenHTJ2K/conformance_data/p0_01.j2k")
+;              os (new System.IO.MemoryStream)]
+;    (io/copy is os)
+;    (.ToArray os)))
+
+(def file1_b11
+  (with-open [is (io/input-stream "c:\\code\\cljr\\file1_b11.jph")
               os (new System.IO.MemoryStream)]
-    (dotimes [_ 119] (.ReadByte is))
     (io/copy is os)
     (.ToArray os)))
 
-(def ds0_ht_07_b11
-  (with-open [is (io/input-stream "/home/james.davidson/OpenHTJ2K/conformance_data/ds0_ht_07_b11.j2k")
-              os (new System.IO.MemoryStream)]
-    (io/copy is os)
-    (.ToArray os)))
-
-(def ds0_ht_01_b11
-  (with-open [is (io/input-stream "/home/james.davidson/OpenHTJ2K/conformance_data/ds0_ht_01_b11.j2k")
-              os (new System.IO.MemoryStream)]
-    (io/copy is os)
-    (.ToArray os)))
-
-(def p0_01
-  (with-open [is (io/input-stream "/home/james.davidson/OpenHTJ2K/conformance_data/p0_01.j2k")
-              os (new System.IO.MemoryStream)]
-    (io/copy is os)
-    (.ToArray os)))
-
-(nvjpeg2kStreamParse h p0_01 (count p0_01) 0 0 s)
+(nvjpeg2kStreamParse h file1_b11 (count file1_b11) 0 0 s)
 
 (def image_info
   (let [m   (int-array 7)
@@ -316,7 +361,7 @@
 ;        uint32_t start_y,
 ;        uint32_t end_y);
 
-(def decode_output (make-array IntPtr (:num_components image_info)))
+(def decode_output (make-array Int64 (:num_components image_info)))
 (def pitch_in_bytes (make-array Int32 (:num_components image_info)))
 
 (dorun
@@ -328,10 +373,12 @@
         w (-> image_comp_info (nth c) :component_width)
         h (-> image_comp_info (nth c) :component_height)]
      (cudaMallocPitch (.AddrOfPinnedObject gch1) (.AddrOfPinnedObject gch2) w h)
-     (aset decode_output c m1)
+     (aset decode_output c (.ToInt64 m2))
      (aset pitch_in_bytes c (.ToInt32 m2))
      (.Free gch1)
      (.Free gch2))))
+
+(cudaDeviceSynchronize)
 
 (def nvjpeg2kImage_t
   (interop/make-struct-type2
@@ -363,7 +410,7 @@
 (cudaDeviceSynchronize)
 
 (def cudaMemcpy2
-  (interop/make-fn
+  (interop/make-fn cudart
    {:function-name       "cudaMemcpy"
     :arg-types           [|System.Byte[]|
                           IntPtr
@@ -380,7 +427,7 @@
         h (:image_height image_info)
         pitch (nth pitch_in_bytes i)
         hostmem (byte-array (* pitch h))
-        _ (cudaMemcpy2 hostmem (nth decode_output i) (* h pitch) cudaMemcpyDeviceToHost)
+        _ (cudaMemcpy2 hostmem (new IntPtr (nth decode_output i)) (* h pitch) cudaMemcpyDeviceToHost)
 ;        ] :ok))
         imi   (new Hjg.Pngcs.ImageInfo w h (:precision (first image_comp_info)) false true false)
         png   (new Hjg.Pngcs.PngWriter os imi)]
@@ -398,5 +445,7 @@
 ;  (type m))
 
 (cudaDeviceSynchronize)
+
+)
 
 nil
